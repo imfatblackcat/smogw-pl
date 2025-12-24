@@ -32,7 +32,11 @@ app.add_middleware(
 app.include_router(router)
 
 # Serve frontend static files (after building)
-frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+# In Docker: /app/backend/dist, locally: ../frontend/dist
+frontend_dist = Path(__file__).parent.parent / "dist"
+if not frontend_dist.exists():
+    frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+
 if frontend_dist.exists():
     app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
     

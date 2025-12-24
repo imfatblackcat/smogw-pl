@@ -120,6 +120,21 @@ class CacheManager:
                     last_error TEXT
                 )
             """)
+
+            # City rankings cache (precomputed)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS city_rankings (
+                    year INTEGER NOT NULL,
+                    pollutant_code TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    threshold_value REAL NOT NULL,
+                    allowed_exceedances_per_year INTEGER NOT NULL,
+                    days_rule TEXT NOT NULL,
+                    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    payload_json TEXT NOT NULL,
+                    PRIMARY KEY (year, pollutant_code, method)
+                )
+            """)
             
             # Indexes for faster queries
             await db.execute("""
@@ -135,6 +150,11 @@ class CacheManager:
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_stations_city 
                 ON stations(city_name)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_city_rankings_pollutant_year
+                ON city_rankings(pollutant_code, year)
             """)
 
             # Prevent duplicates (e.g. when the same period is fetched multiple times).
@@ -447,5 +467,112 @@ class CacheManager:
                     last_error = excluded.last_error
                 """,
                 (job_name, last_run_at, last_success_at, last_error),
+            )
+            await db.commit()
+
+    async def get_available_years_for_pollutant(self, pollutant_code: str) -> List[int]:
+        """Return years for which we have at least one non-null measurement for the pollutant."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            cursor = await db.execute(
+                """
+                SELECT DISTINCT strftime('%Y', date) AS year
+                FROM measurements
+                WHERE pollutant_code = ?
+                  AND value IS NOT NULL
+                  AND date IS NOT NULL
+                ORDER BY year DESC
+                """,
+                (pollutant_code,),
+            )
+            rows = await cursor.fetchall()
+            return [int(r[0]) for r in rows if r and r[0]]
+
+    async def get_city_ranking(
+        self,
+        *,
+        year: int,
+        pollutant_code: str,
+        method: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Return cached city ranking payload (or None if not present)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            cursor = await db.execute(
+                """
+                SELECT threshold_value,
+                       allowed_exceedances_per_year,
+                       days_rule,
+                       computed_at,
+                       payload_json
+                FROM city_rankings
+                WHERE year = ? AND pollutant_code = ? AND method = ?
+                """,
+                (year, pollutant_code, method),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+
+            threshold_value, allowed_exceedances, days_rule, computed_at, payload_json = row
+            payload = json.loads(payload_json)
+            return {
+                "year": year,
+                "pollutant": pollutant_code,
+                "method": method,
+                "threshold_value": threshold_value,
+                "allowed_exceedances_per_year": allowed_exceedances,
+                "days_rule": days_rule,
+                "computed_at": computed_at,
+                **payload,
+            }
+
+    async def upsert_city_ranking(
+        self,
+        *,
+        year: int,
+        pollutant_code: str,
+        method: str,
+        threshold_value: float,
+        allowed_exceedances_per_year: int,
+        days_rule: str,
+        payload: Dict[str, Any],
+    ):
+        """Insert/update cached ranking payload."""
+        computed_at = datetime.utcnow().isoformat()
+        payload_json = json.dumps(payload, ensure_ascii=False)
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            await db.execute(
+                """
+                INSERT INTO city_rankings (
+                    year,
+                    pollutant_code,
+                    method,
+                    threshold_value,
+                    allowed_exceedances_per_year,
+                    days_rule,
+                    computed_at,
+                    payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(year, pollutant_code, method) DO UPDATE SET
+                    threshold_value = excluded.threshold_value,
+                    allowed_exceedances_per_year = excluded.allowed_exceedances_per_year,
+                    days_rule = excluded.days_rule,
+                    computed_at = excluded.computed_at,
+                    payload_json = excluded.payload_json
+                """,
+                (
+                    year,
+                    pollutant_code,
+                    method,
+                    threshold_value,
+                    allowed_exceedances_per_year,
+                    days_rule,
+                    computed_at,
+                    payload_json,
+                ),
             )
             await db.commit()

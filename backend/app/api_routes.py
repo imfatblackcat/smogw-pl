@@ -9,6 +9,7 @@ from .data_processor import DataProcessor, POLLUTANTS
 from .models import CityInfo, PollutantInfo, DataPoint, DataResponse
 from .settings import load_settings
 from .refresh_jobs import RefreshCoordinator, JOB_HOURLY_REFRESH, JOB_WEEKLY_SWEEP
+from .ranking_service import RankingService
 
 router = APIRouter(prefix="/api")
 
@@ -17,6 +18,8 @@ settings = load_settings()
 fetcher = GiosDataFetcher()
 cache = CacheManager()
 processor = DataProcessor()
+ranking_service = RankingService(cache=cache)
+
 refresh_coordinator: RefreshCoordinator = RefreshCoordinator(
     cache=cache,
     fetcher=fetcher,
@@ -103,6 +106,78 @@ async def get_pollutants():
             {"code": code, **info}
             for code, info in POLLUTANTS.items()
         ]
+    }
+
+
+RANKING_POLLUTANTS = {"PM10", "PM2.5"}
+RANKING_METHODS = {"city_avg", "worst_station", "any_station_exceed"}
+
+
+@router.get("/ranking/years")
+async def get_ranking_years(
+    pollutant: str = Query(..., description="Pollutant code (PM10 or PM2.5)"),
+):
+    """Get years with available data for a pollutant (based on cached measurements)."""
+    if pollutant not in RANKING_POLLUTANTS:
+        raise HTTPException(status_code=400, detail=f"Invalid pollutant: {pollutant}")
+
+    years = await cache.get_available_years_for_pollutant(pollutant)
+    return {"pollutant": pollutant, "years": years}
+
+
+@router.get("/ranking")
+async def get_ranking(
+    year: int = Query(..., ge=1900, le=2100, description="Year (YYYY)"),
+    pollutant: str = Query(..., description="Pollutant code (PM10 or PM2.5)"),
+    method: str = Query("city_avg", description="Aggregation method: city_avg | worst_station | any_station_exceed"),
+    force: bool = Query(False, description="Recompute even if a cached ranking exists"),
+):
+    """Get (or compute) a precomputed city ranking for the given year and pollutant."""
+    if pollutant not in RANKING_POLLUTANTS:
+        raise HTTPException(status_code=400, detail=f"Invalid pollutant: {pollutant}")
+    if method not in RANKING_METHODS:
+        raise HTTPException(status_code=400, detail=f"Invalid method: {method}")
+
+    if not force:
+        cached = await cache.get_city_ranking(year=year, pollutant_code=pollutant, method=method)
+        if cached:
+            return cached
+
+    try:
+        result = await ranking_service.compute_year_ranking(
+            year=year,
+            pollutant=pollutant,
+            method=method,  # type: ignore[arg-type]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    payload = {
+        "cities": result.cities,
+        "total_cities": len(result.cities),
+    }
+
+    await cache.upsert_city_ranking(
+        year=year,
+        pollutant_code=pollutant,
+        method=method,
+        threshold_value=result.threshold_value,
+        allowed_exceedances_per_year=result.allowed_exceedances_per_year,
+        days_rule=result.days_rule,
+        payload=payload,
+    )
+
+    # Return what we stored (single source of truth).
+    stored = await cache.get_city_ranking(year=year, pollutant_code=pollutant, method=method)
+    return stored or {
+        "year": year,
+        "pollutant": pollutant,
+        "method": method,
+        "threshold_value": result.threshold_value,
+        "allowed_exceedances_per_year": result.allowed_exceedances_per_year,
+        "days_rule": result.days_rule,
+        "computed_at": result.computed_at,
+        **payload,
     }
 
 

@@ -1,7 +1,9 @@
 import axios from 'axios';
 import type { City, Pollutant, DataResponse, FetchDataParams } from '@/components/AirQualityDashboard/types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Default to same-origin (works when frontend is served by the backend under smogw.pl).
+// For separate deployments, set VITE_API_URL at build time.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -46,6 +48,60 @@ export const fetchAirQualityData = async (params: FetchDataParams): Promise<Data
   }
   
   const response = await api.get<DataResponse>(`/api/data?${queryParams.toString()}`);
+  return response.data;
+};
+
+// Ranking types
+export type RankingMethod = 'city_avg' | 'worst_station' | 'any_station_exceed';
+
+export interface RankingYearsResponse {
+  pollutant: string;
+  years: number[];
+}
+
+export interface CityRankingRow {
+  rank: number;
+  city: string;
+  exceedance_days: number;
+  days_with_data: number;
+  exceedance_pct: number;
+  avg_city_day_value: number;
+  max_city_day_value: number;
+  min_city_day_value: number;
+  avg_stations_with_data: number;
+  stations_count: number;
+  exceeds_allowed_exceedances: boolean;
+}
+
+export interface RankingResponse {
+  year: number;
+  pollutant: string;
+  method: RankingMethod;
+  threshold_value: number;
+  allowed_exceedances_per_year: number;
+  days_rule: string;
+  computed_at: string;
+  total_cities: number;
+  cities: CityRankingRow[];
+}
+
+export const fetchRankingYears = async (pollutant: string): Promise<RankingYearsResponse> => {
+  const response = await api.get<RankingYearsResponse>('/api/ranking/years', {
+    params: { pollutant },
+  });
+  return response.data;
+};
+
+export const fetchRanking = async (params: {
+  year: number;
+  pollutant: string;
+  method?: RankingMethod;
+  force?: boolean;
+}): Promise<RankingResponse> => {
+  const { year, pollutant, method = 'city_avg', force = false } = params;
+  const response = await api.get<RankingResponse>('/api/ranking', {
+    params: { year, pollutant, method, force },
+  });
   return response.data;
 };
 

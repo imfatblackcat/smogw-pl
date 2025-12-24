@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from .api_routes import router
+from .upload_db import router as upload_router
 
 app = FastAPI(
     title="smogw.pl - Air Quality Poland API",
@@ -30,6 +31,7 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(router)
+app.include_router(upload_router)  # Temporary upload endpoint
 
 # Serve frontend static files (after building)
 # In Docker: /app/backend/dist, locally: ../frontend/dist

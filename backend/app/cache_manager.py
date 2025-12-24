@@ -12,6 +12,10 @@ class CacheManager:
     """Manages caching of air quality data in SQLite."""
 
     def __init__(self, db_path: Optional[Union[str, Path]] = None):
+        # Prefer an explicit path from env (used in production with a persistent volume).
+        # Railway docs commonly call this DATABASE_PATH.
+        env_db_path = os.getenv("DATABASE_PATH")
+
         # Make the default path independent from the current working directory.
         backend_dir = Path(__file__).resolve().parents[1]  # .../backend
         default_db_path = backend_dir / "data" / "cache.db"
@@ -21,14 +25,17 @@ class CacheManager:
         legacy_db_path = backend_dir / "backend" / "data" / "cache.db"
 
         if db_path is None:
-            if not default_db_path.exists() and legacy_db_path.exists():
-                default_db_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    legacy_db_path.replace(default_db_path)
-                except OSError:
-                    # Fallback (e.g. cross-device): copy the legacy DB.
-                    shutil.copy2(legacy_db_path, default_db_path)
-            db_path = default_db_path
+            if env_db_path and env_db_path.strip():
+                db_path = Path(env_db_path).expanduser()
+            else:
+                if not default_db_path.exists() and legacy_db_path.exists():
+                    default_db_path.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        legacy_db_path.replace(default_db_path)
+                    except OSError:
+                        # Fallback (e.g. cross-device): copy the legacy DB.
+                        shutil.copy2(legacy_db_path, default_db_path)
+                db_path = default_db_path
 
         self.db_path = str(db_path)
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)

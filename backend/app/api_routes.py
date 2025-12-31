@@ -443,16 +443,99 @@ async def trigger_full_refresh():
 
 async def _full_refresh_task():
     """Background task for full refresh."""
+    import json
+    import os
+    from pathlib import Path
+    
     print("[full-refresh] Starting one-time full refresh...")
     start_time = datetime.now()
     
     try:
         result = await refresh_coordinator.run_hourly_once()
         elapsed = (datetime.now() - start_time).total_seconds()
+        
+        # Prepare report
+        report = {
+            "started_at": start_time.isoformat(),
+            "finished_at": datetime.now().isoformat(),
+            "elapsed_seconds": round(elapsed, 1),
+            "settings": {
+                "history_years": settings.history_years,
+                "enabled_cities": settings.enabled_cities,
+            },
+            "result": {
+                "ok": result.get("ok"),
+                "stations": result.get("stations"),
+                "sensors": result.get("sensors"),
+                "updated_sensors": result.get("updated_sensors"),
+                "fetched_points": result.get("fetched_points"),
+                "error_count": result.get("error_count"),
+                "errors": result.get("errors", [])[:10],  # limit for readability
+            }
+        }
+        
+        # Save to file
+        report_dir = Path(os.getenv("DATABASE_PATH", "data")).parent / "refresh_reports"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_file = report_dir / f"refresh_{start_time.strftime('%Y%m%d_%H%M%S')}.json"
+        
+        with open(report_file, "w") as f:
+            json.dump(report, f, indent=2, default=str)
+        
         print(f"[full-refresh] Completed in {elapsed:.1f}s")
-        print(f"[full-refresh] Stats: {result}")
+        print(f"[full-refresh] Stats: stations={result.get('stations')}, sensors={result.get('sensors')}, fetched_points={result.get('fetched_points')}, errors={result.get('error_count')}")
+        print(f"[full-refresh] Report saved to: {report_file}")
+        
     except Exception as e:
         print(f"[full-refresh] Error: {e}")
+
+
+@router.get("/admin/refresh-reports")
+async def get_refresh_reports():
+    """List all refresh reports saved to disk."""
+    import json
+    import os
+    from pathlib import Path
+    
+    report_dir = Path(os.getenv("DATABASE_PATH", "data")).parent / "refresh_reports"
+    
+    if not report_dir.exists():
+        return {"reports": [], "message": "No reports directory found"}
+    
+    reports = []
+    for f in sorted(report_dir.glob("refresh_*.json"), reverse=True)[:20]:  # Last 20 reports
+        try:
+            with open(f) as fp:
+                data = json.load(fp)
+                reports.append({
+                    "filename": f.name,
+                    "started_at": data.get("started_at"),
+                    "elapsed_seconds": data.get("elapsed_seconds"),
+                    "stations": data.get("result", {}).get("stations"),
+                    "fetched_points": data.get("result", {}).get("fetched_points"),
+                    "error_count": data.get("result", {}).get("error_count"),
+                })
+        except Exception:
+            continue
+    
+    return {"reports": reports, "total": len(reports)}
+
+
+@router.get("/admin/refresh-reports/{filename}")
+async def get_refresh_report_detail(filename: str):
+    """Get detailed refresh report by filename."""
+    import json
+    import os
+    from pathlib import Path
+    
+    report_dir = Path(os.getenv("DATABASE_PATH", "data")).parent / "refresh_reports"
+    report_file = report_dir / filename
+    
+    if not report_file.exists() or not filename.startswith("refresh_"):
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    with open(report_file) as f:
+        return json.load(f)
 
 
 @router.get("/admin/completeness-report")

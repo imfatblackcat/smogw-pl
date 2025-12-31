@@ -305,12 +305,15 @@ class RefreshCoordinator:
                         
                         if max_dt is None:
                             # No data at all - fetch full history
-                            if history_years is None:
+                            if history_start is None:
                                 return (0, False, None)
                             from_dt = history_start
-                        elif history_start and min_dt and min_dt > history_start:
+                            print(f"[backfill] Sensor {sensor_id} ({pollutant_code}): no data. Fetching from {from_dt}")
+                        elif history_start and (min_dt is None or min_dt > history_start):
                             # Have data but not full history - fetch older data (backfill)
                             from_dt = history_start
+                            to_dt = min_dt if min_dt else now
+                            print(f"[backfill] Sensor {sensor_id} ({pollutant_code}): partial data (min={min_dt}). Fetching {from_dt} to {to_dt}")
                         else:
                             # Have full history - just fetch new data
                             from_dt = max_dt - (overlap or timedelta(0))
@@ -322,6 +325,7 @@ class RefreshCoordinator:
                     fetched = await self.fetcher.fetch_sensor_data(sensor_id, from_dt, to_dt)
                     if fetched:
                         await self.cache.cache_measurements(sensor_id, station_id, pollutant_code, fetched)
+                        print(f"[backfill] Sensor {sensor_id} ({pollutant_code}): saved {len(fetched)} points.")
 
                     max_after = await self.cache.get_max_measurement_date(sensor_id)
                     await self.cache.upsert_sync_state(

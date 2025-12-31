@@ -2,7 +2,7 @@
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from .data_fetcher import GiosDataFetcher
 from .cache_manager import CacheManager
 from .data_processor import DataProcessor, POLLUTANTS
@@ -415,3 +415,129 @@ async def get_data(
         },
         "total_points": len(all_data_points)
     }
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+@router.post("/admin/full-refresh")
+async def trigger_full_refresh():
+    """Trigger one-time full 15-year backfill for all configured cities.
+    
+    This runs the hourly refresh job immediately (adds only missing data).
+    The job runs in the background; use /api/refresh/status to monitor progress.
+    """
+    # Run in background task
+    asyncio.create_task(_full_refresh_task())
+    
+    return {
+        "status": "started",
+        "message": "Full refresh started in background. Monitor with /api/refresh/status",
+        "settings": {
+            "history_years": settings.history_years,
+            "enabled_cities": settings.enabled_cities,
+        }
+    }
+
+
+async def _full_refresh_task():
+    """Background task for full refresh."""
+    print("[full-refresh] Starting one-time full refresh...")
+    start_time = datetime.now()
+    
+    try:
+        result = await refresh_coordinator.run_hourly_once()
+        elapsed = (datetime.now() - start_time).total_seconds()
+        print(f"[full-refresh] Completed in {elapsed:.1f}s")
+        print(f"[full-refresh] Stats: {result}")
+    except Exception as e:
+        print(f"[full-refresh] Error: {e}")
+
+
+@router.get("/admin/completeness-report")
+async def get_completeness_report(
+    min_hourly: int = Query(18, description="Minimum hourly values for a day to be considered complete (default 18/24)"),
+):
+    """Generate data completeness report per station/year/pollutant.
+    
+    Returns completeness statistics showing how many days have sufficient
+    hourly measurements (default: 18 out of 24 hours).
+    """
+    raw_stats = await cache.get_completeness_stats(min_hourly_per_day=min_hourly)
+    
+    # Group by city -> station -> year
+    cities_map: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    
+    for row in raw_stats:
+        city = row["city_name"]
+        station_id = row["station_id"]
+        
+        if city not in cities_map:
+            cities_map[city] = {}
+        
+        if station_id not in cities_map[city]:
+            cities_map[city][station_id] = {
+                "station_id": station_id,
+                "station_name": row["station_name"],
+                "years": {}
+            }
+        
+        year = row["year"]
+        if year not in cities_map[city][station_id]["years"]:
+            cities_map[city][station_id]["years"][year] = {
+                "year": year,
+                "pollutants": {}
+            }
+        
+        cities_map[city][station_id]["years"][year]["pollutants"][row["pollutant_code"]] = {
+            "complete_days": row["complete_days"],
+            "total_days": row["total_days"],
+            "completeness_pct": row["completeness_pct"],
+            "total_hourly_values": row["total_hourly_values"],
+        }
+    
+    # Convert to list format
+    cities_list = []
+    for city_name in sorted(cities_map.keys()):
+        stations_list = []
+        for station_id in sorted(cities_map[city_name].keys()):
+            station_data = cities_map[city_name][station_id]
+            years_list = []
+            for year in sorted(station_data["years"].keys(), reverse=True):
+                year_data = station_data["years"][year]
+                pollutants = year_data["pollutants"]
+                
+                # Calculate overall completeness for this year (average across pollutants)
+                if pollutants:
+                    avg_pct = round(
+                        sum(p["completeness_pct"] for p in pollutants.values()) / len(pollutants),
+                        1
+                    )
+                else:
+                    avg_pct = 0.0
+                
+                years_list.append({
+                    "year": year,
+                    "avg_completeness_pct": avg_pct,
+                    "pollutants": pollutants,
+                })
+            
+            stations_list.append({
+                "station_id": station_id,
+                "station_name": station_data["station_name"],
+                "years": years_list,
+            })
+        
+        cities_list.append({
+            "city": city_name,
+            "stations": stations_list,
+        })
+    
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "threshold": f"{min_hourly}/24 hourly values per day",
+        "total_stations": sum(len(c["stations"]) for c in cities_list),
+        "cities": cities_list,
+    }
+

@@ -663,3 +663,76 @@ class CacheManager:
                 rows,
             )
             await db.commit()
+
+    async def get_completeness_stats(
+        self,
+        min_hourly_per_day: int = 18,
+    ) -> List[Dict[str, Any]]:
+        """Get data completeness statistics per station/year/pollutant.
+        
+        Args:
+            min_hourly_per_day: Minimum hourly values for a day to be considered complete (default 18/24)
+            
+        Returns:
+            List of dicts with completeness stats grouped by city, station, year, pollutant
+        """
+        query = """
+        WITH daily_counts AS (
+            SELECT 
+                m.station_id,
+                m.pollutant_code,
+                CAST(strftime('%Y', m.date) AS INTEGER) AS year,
+                date(m.date) AS day,
+                COUNT(*) AS hourly_count
+            FROM measurements m
+            WHERE m.value IS NOT NULL
+            GROUP BY m.station_id, m.pollutant_code, year, day
+        ),
+        station_year_stats AS (
+            SELECT 
+                dc.station_id,
+                dc.pollutant_code,
+                dc.year,
+                SUM(CASE WHEN dc.hourly_count >= ? THEN 1 ELSE 0 END) AS complete_days,
+                COUNT(*) AS total_days,
+                SUM(dc.hourly_count) AS total_hourly_values
+            FROM daily_counts dc
+            GROUP BY dc.station_id, dc.pollutant_code, dc.year
+        )
+        SELECT 
+            s.city_name,
+            sys.station_id,
+            s.station_name,
+            sys.pollutant_code,
+            sys.year,
+            sys.complete_days,
+            sys.total_days,
+            sys.total_hourly_values,
+            ROUND(100.0 * sys.complete_days / sys.total_days, 1) AS completeness_pct
+        FROM station_year_stats sys
+        JOIN stations s ON s.id = sys.station_id
+        WHERE s.city_name IS NOT NULL AND s.city_name != ''
+        ORDER BY s.city_name, sys.station_id, sys.year DESC, sys.pollutant_code
+        """
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            cursor = await db.execute(query, (min_hourly_per_day,))
+            rows = await cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            results.append({
+                "city_name": row[0],
+                "station_id": row[1],
+                "station_name": row[2],
+                "pollutant_code": row[3],
+                "year": row[4],
+                "complete_days": row[5],
+                "total_days": row[6],
+                "total_hourly_values": row[7],
+                "completeness_pct": row[8],
+            })
+        
+        return results
+

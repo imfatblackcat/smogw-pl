@@ -1,6 +1,5 @@
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { AirQualityDashboard } from './components/AirQualityDashboard';
-import { RankingPage } from './components/RankingPage';
 import { TrendsPage } from './components/TrendsPage';
 
 function App() {
@@ -24,16 +23,6 @@ function App() {
               Mapa i Wykresy
             </NavLink>
             <NavLink
-              to="/ranking"
-              className={({ isActive }) =>
-                isActive
-                  ? 'text-blue-700 font-medium'
-                  : 'text-gray-600 hover:text-gray-900'
-              }
-            >
-              Ranking Roczny
-            </NavLink>
-            <NavLink
               to="/trends"
               className={({ isActive }) =>
                 isActive
@@ -49,7 +38,6 @@ function App() {
 
       <Routes>
         <Route path="/" element={<AirQualityDashboard />} />
-        <Route path="/ranking" element={<RankingPage />} />
         <Route path="/trends" element={<TrendsPage />} />
         <Route path="*" element={<AirQualityDashboard />} />
       </Routes>

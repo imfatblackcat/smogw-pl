@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon } from 'lucide-react';
+import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon, ChevronUp, ChevronDown } from 'lucide-react';
 import {
   CartesianGrid,
   Legend,
@@ -56,6 +56,39 @@ function ChangeCell({ value }: { value: number | null }) {
   );
 }
 
+// Sortable column types
+type SortColumn = 'city' | 'current' | 'yoy' | 'y3' | 'y5' | 'y10';
+type SortDirection = 'asc' | 'desc';
+
+// Sortable header component
+function SortableHeader({
+  column,
+  currentSort,
+  direction,
+  onSort,
+  children
+}: {
+  column: SortColumn;
+  currentSort: SortColumn;
+  direction: SortDirection;
+  onSort: (col: SortColumn) => void;
+  children: React.ReactNode;
+}) {
+  const isActive = currentSort === column;
+  return (
+    <th
+      scope="col"
+      className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+      onClick={() => onSort(column)}
+    >
+      <div className="inline-flex items-center gap-1">
+        {children}
+        {isActive && (direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+      </div>
+    </th>
+  );
+}
+
 interface CityChangeRow {
   city: string;
   currentYear: number;
@@ -81,6 +114,19 @@ export function TrendsPage() {
 
   // Hidden series (controlled by legend click)
   const [hiddenCities, setHiddenCities] = useState<Set<string>>(new Set());
+
+  // Table sort state
+  const [sortColumn, setSortColumn] = useState<SortColumn>('yoy');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection(column === 'city' ? 'asc' : 'asc'); // For changes, asc = best improvement first
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -134,9 +180,8 @@ export function TrendsPage() {
     const year3 = sortedYears.find(y => y <= currentYear - 3);
     const year5 = sortedYears.find(y => y <= currentYear - 5);
     const year10 = sortedYears.find(y => y <= currentYear - 10);
-    const oldestYear = sortedYears[sortedYears.length - 1];
 
-    // Build lookup: year -> { city: value }
+    // Build lookup first to find valid oldest year
     const yearData: Record<number, Record<string, number>> = {};
     for (const point of data.points) {
       yearData[point.year] = {};
@@ -144,6 +189,21 @@ export function TrendsPage() {
         if (point[city] !== undefined) {
           yearData[point.year][city] = point[city] as number;
         }
+      }
+    }
+
+    // Find oldest year with sufficient data (at least 50% of cities have data)
+    // This avoids misleading comparisons with incomplete early years like 2010
+    const sortedYearsAsc = [...data.years].sort((a, b) => a - b);
+    let oldestYear = sortedYearsAsc[0];
+    for (const year of sortedYearsAsc) {
+      const citiesWithData = data.cities.filter(city => {
+        const val = yearData[year]?.[city];
+        return val !== undefined; // City has any data for this year
+      });
+      if (citiesWithData.length >= data.cities.length * 0.5) {
+        oldestYear = year;
+        break;
       }
     }
 
@@ -227,6 +287,55 @@ export function TrendsPage() {
       avgOldest: avgOldestVal,
     };
   }, [changeTableData]);
+
+  // Sort rows based on current sort state
+  const sortedRows = useMemo(() => {
+    const rows = [...changeTableData.rows];
+
+    rows.sort((a, b) => {
+      let aVal: number | string | null = null;
+      let bVal: number | string | null = null;
+
+      switch (sortColumn) {
+        case 'city':
+          aVal = a.city;
+          bVal = b.city;
+          break;
+        case 'current':
+          aVal = a.currentValue ?? -9999;
+          bVal = b.currentValue ?? -9999;
+          break;
+        case 'yoy':
+          aVal = a.yoyChange ?? 9999;
+          bVal = b.yoyChange ?? 9999;
+          break;
+        case 'y3':
+          aVal = a.change3y ?? 9999;
+          bVal = b.change3y ?? 9999;
+          break;
+        case 'y5':
+          aVal = a.change5y ?? 9999;
+          bVal = b.change5y ?? 9999;
+          break;
+        case 'y10':
+          aVal = a.change10y ?? 9999;
+          bVal = b.change10y ?? 9999;
+          break;
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDirection === 'asc'
+          ? aVal.localeCompare(bVal, 'pl')
+          : bVal.localeCompare(aVal, 'pl');
+      }
+
+      const numA = aVal as number;
+      const numB = bVal as number;
+      return sortDirection === 'asc' ? numA - numB : numB - numA;
+    });
+
+    return rows;
+  }, [changeTableData.rows, sortColumn, sortDirection]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -411,39 +520,35 @@ export function TrendsPage() {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50">
-                          Miasto
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <SortableHeader column="city" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
+                          <span className="text-left">Miasto</span>
+                        </SortableHeader>
+                        <SortableHeader column="current" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                           {changeTableData.years.current}<br /><span className="normal-case font-normal">(dni)</span>
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        </SortableHeader>
+                        <SortableHeader column="yoy" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                           vs {changeTableData.years.yoy}<br /><span className="normal-case font-normal">(YoY)</span>
-                        </th>
+                        </SortableHeader>
                         {changeTableData.years.y3 > 0 && (
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <SortableHeader column="y3" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                             vs {changeTableData.years.y3}<br /><span className="normal-case font-normal">(3 lata)</span>
-                          </th>
+                          </SortableHeader>
                         )}
                         {changeTableData.years.y5 > 0 && (
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <SortableHeader column="y5" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                             vs {changeTableData.years.y5}<br /><span className="normal-case font-normal">(5 lat)</span>
-                          </th>
+                          </SortableHeader>
                         )}
                         {changeTableData.years.y10 > 0 && (
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <SortableHeader column="y10" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                             vs {changeTableData.years.y10}<br /><span className="normal-case font-normal">(10 lat)</span>
-                          </th>
+                          </SortableHeader>
                         )}
-                        {changeTableData.years.oldest !== changeTableData.years.current && (
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            vs {changeTableData.years.oldest}<br /><span className="normal-case font-normal">(najstarszy)</span>
-                          </th>
-                        )}
+
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {changeTableData.rows.map((row, idx) => (
+                      {sortedRows.map((row, idx) => (
                         <tr key={row.city} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                           <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0" style={{ backgroundColor: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
                             {row.city}
@@ -469,11 +574,7 @@ export function TrendsPage() {
                               <ChangeCell value={row.change10y} />
                             </td>
                           )}
-                          {changeTableData.years && changeTableData.years.oldest !== changeTableData.years.current && (
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={row.oldestChange} />
-                            </td>
-                          )}
+
                         </tr>
                       ))}
                       {/* Average row */}
@@ -503,11 +604,7 @@ export function TrendsPage() {
                               <ChangeCell value={avgRow.avg10y} />
                             </td>
                           )}
-                          {changeTableData.years.oldest !== changeTableData.years.current && (
-                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avgOldest} />
-                            </td>
-                          )}
+
                         </tr>
                       )}
                     </tbody>

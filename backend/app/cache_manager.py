@@ -702,7 +702,7 @@ class CacheManager:
         SELECT 
             s.city_name,
             sys.station_id,
-            s.station_name,
+            s.name AS station_name,
             sys.pollutant_code,
             sys.year,
             sys.complete_days,

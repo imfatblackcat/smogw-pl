@@ -41,8 +41,42 @@ async def startup_event():
         await cache.cache_stations(stations)
         print(f"Cached {len(stations)} stations")
 
+    # Precompute trends data for instant TrendsPage loading
+    asyncio.create_task(_precompute_trends())
+
     # Start background refresh loops (hourly delta + weekly sweep)
     refresh_coordinator.start()
+
+
+async def _precompute_trends():
+    """Precompute trends for all pollutant/method/standard combinations.
+    
+    This runs in background at startup so TrendsPage loads instantly.
+    """
+    pollutants = ["PM10", "PM2.5"]
+    methods = ["city_avg", "worst_station"]
+    standards = ["who", "eu"]
+    
+    print("[precompute] Starting trends precomputation...")
+    start_time = datetime.now()
+    
+    computed = 0
+    for pollutant in pollutants:
+        for method in methods:
+            for standard in standards:
+                try:
+                    await ranking_service.compute_trends(
+                        pollutant=pollutant,
+                        method=method,
+                        standard=standard,
+                    )
+                    computed += 1
+                    print(f"[precompute] Computed: {pollutant}/{method}/{standard}")
+                except Exception as e:
+                    print(f"[precompute] Error computing {pollutant}/{method}/{standard}: {e}")
+    
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"[precompute] Finished {computed} trend combinations in {elapsed:.1f}s")
 
 
 @router.on_event("shutdown")

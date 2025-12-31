@@ -125,6 +125,32 @@ async def get_ranking_years(
     return {"pollutant": pollutant, "years": years}
 
 
+@router.get("/ranking/trends")
+async def get_ranking_trends(
+    pollutant: str = Query(..., description="Pollutant code (PM10 or PM2.5)"),
+    standard: str = Query("who", description="Standard: who | eu"),
+    method: str = Query("city_avg", description="Method: city_avg | worst_station | any_station_exceed"),
+):
+    """Get multi-year city exceedance trends (cached annual stats)."""
+    if pollutant not in RANKING_POLLUTANTS:
+        raise HTTPException(status_code=400, detail=f"Invalid pollutant: {pollutant}")
+    if method not in RANKING_METHODS:
+        raise HTTPException(status_code=400, detail=f"Invalid method: {method}")
+    if standard not in ("who", "eu"):
+        raise HTTPException(status_code=400, detail="Invalid standard. Use 'who' or 'eu'")
+
+    try:
+        # compute_trends handles caching (reading fast for old years, computing for new)
+        result = await ranking_service.compute_trends(
+            pollutant=pollutant,
+            method=method,  # type: ignore[arg-type]
+            standard=standard,  # type: ignore[arg-type]
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/ranking")
 async def get_ranking(
     year: int = Query(..., ge=1900, le=2100, description="Year (YYYY)"),

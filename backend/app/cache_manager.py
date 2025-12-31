@@ -142,6 +142,23 @@ class CacheManager:
                     PRIMARY KEY (year, pollutant_code, method)
                 )
             """)
+
+            # Annual city stats cache (for multi-year trends)
+            # Stores granular yearly result per city to allow incremental updates (re-calc current year only)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS annual_city_stats (
+                    year INTEGER NOT NULL,
+                    city_name TEXT NOT NULL,
+                    pollutant_code TEXT NOT NULL,
+                    ranking_method TEXT NOT NULL,
+                    standard_type TEXT NOT NULL, -- 'who' or 'eu'
+                    threshold_value REAL NOT NULL,
+                    exceedance_days INTEGER NOT NULL,
+                    total_days INTEGER NOT NULL,
+                    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (year, city_name, pollutant_code, ranking_method, standard_type)
+                )
+            """)
             
             # Indexes for faster queries
             await db.execute("""
@@ -162,6 +179,11 @@ class CacheManager:
             await db.execute("""
                 CREATE INDEX IF NOT EXISTS idx_city_rankings_pollutant_year
                 ON city_rankings(pollutant_code, year)
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_annual_city_stats_query
+                ON annual_city_stats(pollutant_code, standard_type, ranking_method)
             """)
 
             # Prevent duplicates (e.g. when the same period is fetched multiple times).
@@ -581,5 +603,63 @@ class CacheManager:
                     computed_at,
                     payload_json,
                 ),
+            )
+            await db.commit()
+
+    async def get_annual_stats(
+        self,
+        *,
+        pollutant_code: str,
+        ranking_method: str,
+        standard_type: str,
+    ) -> List[Dict[str, Any]]:
+        """Get cached annual stats for all years and cities matching criteria."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            cursor = await db.execute(
+                """
+                SELECT year, city_name, exceedance_days, total_days, computed_at
+                FROM annual_city_stats
+                WHERE pollutant_code = ? AND ranking_method = ? AND standard_type = ?
+                ORDER BY year ASC, city_name ASC
+                """,
+                (pollutant_code, ranking_method, standard_type),
+            )
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "year": row[0],
+                    "city": row[1],
+                    "exceedance_days": row[2],
+                    "total_days": row[3],
+                    "computed_at": row[4],
+                }
+                for row in rows
+            ]
+
+    async def upsert_annual_stats(
+        self,
+        rows: List[tuple],
+    ):
+        """
+        Batch upsert annual stats.
+        rows expected format: (year, city_name, pollutant_code, ranking_method, standard_type, threshold_value, exceedance_days, total_days, computed_at)
+        """
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            await db.executemany(
+                """
+                INSERT INTO annual_city_stats (
+                    year, city_name, pollutant_code, ranking_method, standard_type,
+                    threshold_value, exceedance_days, total_days, computed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(year, city_name, pollutant_code, ranking_method, standard_type) DO UPDATE SET
+                    exceedance_days = excluded.exceedance_days,
+                    total_days = excluded.total_days,
+                    computed_at = excluded.computed_at,
+                    threshold_value = excluded.threshold_value
+                """,
+                rows,
             )
             await db.commit()

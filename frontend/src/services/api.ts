@@ -105,4 +105,31 @@ export const fetchRanking = async (params: {
   return response.data;
 };
 
+export type RankingStandard = 'who' | 'eu';
+
+export interface TrendsResponse {
+  pollutant: string;
+  method: RankingMethod;
+  standard: RankingStandard;
+  threshold_value: number;
+  years: number[];
+  cities: string[];
+  points: Array<{
+    year: number;
+    [city: string]: number; // dynamic keys for cities
+  }>;
+}
+
+export const fetchTrends = async (params: {
+  pollutant: string;
+  standard: RankingStandard;
+  method?: RankingMethod;
+}): Promise<TrendsResponse> => {
+  const { pollutant, standard, method = 'city_avg' } = params;
+  const response = await api.get<TrendsResponse>('/api/ranking/trends', {
+    params: { pollutant, standard, method },
+  });
+  return response.data;
+};
+
 export default api;

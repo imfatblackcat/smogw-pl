@@ -30,23 +30,23 @@ export const fetchPollutants = async (): Promise<PollutantsResponse> => {
 
 export const fetchAirQualityData = async (params: FetchDataParams): Promise<DataResponse> => {
   const { cities, pollutant, startDate, endDate, stationIds, aggregation } = params;
-  
+
   const queryParams = new URLSearchParams();
-  
+
   // Add cities
   cities.forEach(city => queryParams.append('cities', city));
-  
+
   // Add other params
   queryParams.append('pollutant', pollutant);
   queryParams.append('start_date', startDate);
   queryParams.append('end_date', endDate);
   queryParams.append('aggregation', aggregation || 'daily');
-  
+
   // Add station IDs if specified
   if (stationIds && stationIds.length > 0) {
     stationIds.forEach(id => queryParams.append('station_ids', String(id)));
   }
-  
+
   const response = await api.get<DataResponse>(`/api/data?${queryParams.toString()}`);
   return response.data;
 };
@@ -128,6 +128,30 @@ export const fetchTrends = async (params: {
   const { pollutant, standard, method = 'city_avg' } = params;
   const response = await api.get<TrendsResponse>('/api/ranking/trends', {
     params: { pollutant, standard, method },
+  });
+  return response.data;
+};
+
+// Data Coverage types
+export interface CoverageData {
+  days: number;
+  pct: number;
+}
+
+export interface CityCoverage {
+  name: string;
+  coverage: Record<string, CoverageData>;
+}
+
+export interface DataCoverageResponse {
+  pollutant: string;
+  years: number[];
+  cities: CityCoverage[];
+}
+
+export const fetchDataCoverage = async (pollutant: string): Promise<DataCoverageResponse> => {
+  const response = await api.get<DataCoverageResponse>('/api/data-coverage', {
+    params: { pollutant, min_year: 2015 },
   });
   return response.data;
 };

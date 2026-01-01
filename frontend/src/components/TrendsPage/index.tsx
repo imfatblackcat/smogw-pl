@@ -9,19 +9,19 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  ReferenceLine,
 } from 'recharts';
-import { fetchTrends, type RankingMethod, type RankingStandard, type TrendsResponse } from '@/services/api';
+import { fetchTrends, fetchDataCoverage, type RankingMethod, type TrendsResponse, type DataCoverageResponse } from '@/services/api';
 
 const POLLUTANTS = [
   { code: 'PM10', label: 'PM10' },
   { code: 'PM2.5', label: 'PM2.5' },
 ] as const;
 
-const STANDARDS = [
-  { value: 'who', label: 'WHO (Rekomendacja)', desc: 'PM10 > 45, PM2.5 > 15' },
-  { value: 'eu', label: 'UE (Dyrektywa 2030)', desc: 'PM10 > 45, PM2.5 > 25' },
-] as const;
+// WHO daily limits (µg/m³)
+const WHO_LIMITS = {
+  'PM10': 45,
+  'PM2.5': 15,
+} as const;
 
 // Colors for chart lines
 const COLORS = [
@@ -57,7 +57,7 @@ function ChangeCell({ value }: { value: number | null }) {
 }
 
 // Sortable column types
-type SortColumn = 'city' | 'current' | 'yoy' | 'y3' | 'y5' | 'y10';
+type SortColumn = 'city' | 'current' | 'y3' | 'y5' | 'y10';
 type SortDirection = 'asc' | 'desc';
 
 // Sortable header component
@@ -93,7 +93,6 @@ interface CityChangeRow {
   city: string;
   currentYear: number;
   currentValue: number | undefined;
-  yoyChange: number | null;
   change3y: number | null;
   change5y: number | null;
   change10y: number | null;
@@ -105,7 +104,6 @@ interface CityChangeRow {
 
 export function TrendsPage() {
   const [pollutant, setPollutant] = useState<string>('PM10');
-  const [standard, setStandard] = useState<RankingStandard>('who');
   const [method, setMethod] = useState<RankingMethod>('city_avg');
 
   const [data, setData] = useState<TrendsResponse | null>(null);
@@ -116,8 +114,12 @@ export function TrendsPage() {
   const [hiddenCities, setHiddenCities] = useState<Set<string>>(new Set());
 
   // Table sort state
-  const [sortColumn, setSortColumn] = useState<SortColumn>('yoy');
+  const [sortColumn, setSortColumn] = useState<SortColumn>('y10');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  // Coverage data state
+  const [coverageData, setCoverageData] = useState<DataCoverageResponse | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -135,7 +137,7 @@ export function TrendsPage() {
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchTrends({ pollutant, standard, method });
+        const result = await fetchTrends({ pollutant, standard: 'who', method });
         if (cancelled) return;
         setData(result);
       } catch (e: any) {
@@ -148,7 +150,30 @@ export function TrendsPage() {
 
     load();
     return () => { cancelled = true; };
-  }, [pollutant, standard, method]);
+  }, [pollutant, method]);
+
+  // Fetch coverage data when pollutant changes
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCoverage() {
+      setCoverageLoading(true);
+      try {
+        const result = await fetchDataCoverage(pollutant);
+        if (cancelled) return;
+        setCoverageData(result);
+      } catch (e: any) {
+        console.error('Error loading coverage:', e);
+        if (!cancelled) setCoverageData(null);
+      } finally {
+        if (!cancelled) setCoverageLoading(false);
+      }
+    }
+
+    loadCoverage();
+    return () => { cancelled = true; };
+  }, [pollutant]);
+
 
   const toggleCity = (city: string) => {
     const next = new Set(hiddenCities);
@@ -171,17 +196,22 @@ export function TrendsPage() {
   }, [data]);
 
   // Calculate change table data
-  const changeTableData = useMemo((): { rows: CityChangeRow[], years: { current: number, yoy: number, y3: number, y5: number, y10: number, oldest: number } | null } => {
+  const changeTableData = useMemo((): { rows: CityChangeRow[], years: { current: number, y3: number, y5: number, y10: number, oldest: number } | null } => {
     if (!data || data.years.length < 2) return { rows: [], years: null };
 
+    // Get the current calendar year to determine the "last full year"
+    const calendarYear = new Date().getFullYear();
     const sortedYears = [...data.years].sort((a, b) => b - a);
-    const currentYear = sortedYears[0];
-    const prevYear = sortedYears[1];
-    const year3 = sortedYears.find(y => y <= currentYear - 3);
-    const year5 = sortedYears.find(y => y <= currentYear - 5);
-    const year10 = sortedYears.find(y => y <= currentYear - 10);
 
-    // Build lookup first to find valid oldest year
+    // Reference year = last full year (e.g., 2025 if we're in 2026)
+    const referenceYear = sortedYears.find(y => y < calendarYear) || sortedYears[0];
+
+    // Calculate comparison years based on the reference year
+    const year3 = sortedYears.find(y => y <= referenceYear - 3);
+    const year5 = sortedYears.find(y => y <= referenceYear - 5);
+    const year10 = sortedYears.find(y => y <= referenceYear - 10);
+
+    // Build lookup for year data
     const yearData: Record<number, Record<string, number>> = {};
     for (const point of data.points) {
       yearData[point.year] = {};
@@ -192,60 +222,45 @@ export function TrendsPage() {
       }
     }
 
-    // Find oldest year with sufficient data (at least 50% of cities have data)
-    // This avoids misleading comparisons with incomplete early years like 2010
+    // Oldest year = 2015 or earliest available year if 2015 not present
     const sortedYearsAsc = [...data.years].sort((a, b) => a - b);
-    let oldestYear = sortedYearsAsc[0];
-    for (const year of sortedYearsAsc) {
-      const citiesWithData = data.cities.filter(city => {
-        const val = yearData[year]?.[city];
-        return val !== undefined; // City has any data for this year
-      });
-      if (citiesWithData.length >= data.cities.length * 0.5) {
-        oldestYear = year;
-        break;
-      }
-    }
+    const oldestYear = sortedYearsAsc.find(y => y >= 2015) || sortedYearsAsc[0];
 
     const rows: CityChangeRow[] = data.cities.map(city => {
-      const currentValue = yearData[currentYear]?.[city];
-      const prevValue = yearData[prevYear]?.[city];
+      const currentValue = yearData[referenceYear]?.[city];
       const value3y = year3 ? yearData[year3]?.[city] : undefined;
       const value5y = year5 ? yearData[year5]?.[city] : undefined;
       const value10y = year10 ? yearData[year10]?.[city] : undefined;
       const oldestValue = yearData[oldestYear]?.[city];
 
-      const yoyChange = calcChange(currentValue, prevValue);
       const change3y = calcChange(currentValue, value3y);
       const change5y = calcChange(currentValue, value5y);
       const change10y = calcChange(currentValue, value10y);
-      const oldestChange = oldestYear !== currentYear ? calcChange(currentValue, oldestValue) : null;
+      const oldestChange = oldestYear !== referenceYear ? calcChange(currentValue, oldestValue) : null;
 
-      // Sort by YoY change (most negative = biggest improvement first), null last
-      const sortValue = yoyChange !== null ? yoyChange : 9999;
+      // Sort by 10y change (most negative = biggest improvement first), null last
+      const sortValue = change10y !== null ? change10y : 9999;
 
       return {
         city,
-        currentYear,
+        currentYear: referenceYear,
         currentValue,
-        yoyChange,
         change3y,
         change5y,
         change10y,
         oldestChange,
-        oldestYear: oldestYear !== currentYear ? oldestYear : null,
+        oldestYear: oldestYear !== referenceYear ? oldestYear : null,
         sortValue,
       };
     });
 
-    // Sort by greatest improvement (most negative YoY first)
+    // Sort by greatest improvement (most negative 10y change first)
     rows.sort((a, b) => a.sortValue - b.sortValue);
 
     return {
       rows,
       years: {
-        current: currentYear,
-        yoy: prevYear,
+        current: referenceYear,
         y3: year3 || 0,
         y5: year5 || 0,
         y10: year10 || 0,
@@ -263,9 +278,6 @@ export function TrendsPage() {
 
     const avgCurrent = Math.round(validRows.reduce((sum, r) => sum + (r.currentValue || 0), 0) / validRows.length);
 
-    const avgYoy = validRows.filter(r => r.yoyChange !== null);
-    const avgYoyVal = avgYoy.length > 0 ? Math.round(avgYoy.reduce((sum, r) => sum + r.yoyChange!, 0) / avgYoy.length) : null;
-
     const avg3y = validRows.filter(r => r.change3y !== null);
     const avg3yVal = avg3y.length > 0 ? Math.round(avg3y.reduce((sum, r) => sum + r.change3y!, 0) / avg3y.length) : null;
 
@@ -280,7 +292,6 @@ export function TrendsPage() {
 
     return {
       avgCurrent,
-      avgYoy: avgYoyVal,
       avg3y: avg3yVal,
       avg5y: avg5yVal,
       avg10y: avg10yVal,
@@ -304,10 +315,6 @@ export function TrendsPage() {
         case 'current':
           aVal = a.currentValue ?? -9999;
           bVal = b.currentValue ?? -9999;
-          break;
-        case 'yoy':
-          aVal = a.yoyChange ?? 9999;
-          bVal = b.yoyChange ?? 9999;
           break;
         case 'y3':
           aVal = a.change3y ?? 9999;
@@ -379,22 +386,9 @@ export function TrendsPage() {
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Standard Selector */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Norma odniesienia</label>
-              <select
-                value={standard}
-                onChange={(e) => setStandard(e.target.value as RankingStandard)}
-                className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 border p-2.5"
-              >
-                {STANDARDS.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                {STANDARDS.find(s => s.value === standard)?.desc} µg/m³ (średnia dobowa)
+              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                Norma WHO: przekroczenie gdy średnia dobowa &gt; <strong>{WHO_LIMITS[pollutant as keyof typeof WHO_LIMITS]} µg/m³</strong>
               </p>
             </div>
 
@@ -440,7 +434,7 @@ export function TrendsPage() {
                   </p>
                 </div>
                 {/* WHO limit info line */}
-                {standard === 'who' && pollutant === 'PM2.5' && (
+                {pollutant === 'PM2.5' && (
                   <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full border border-amber-200">
                     <Info className="w-3 h-3" />
                     WHO zaleca max 3-4 dni przekroczeń rocznie (dla normy 15 µg/m³)
@@ -478,10 +472,7 @@ export function TrendsPage() {
                       }}
                     />
 
-                    {/* EU limit reference line */}
-                    {standard === 'eu' && (
-                      <ReferenceLine y={35} stroke="#ef4444" strokeDasharray="3 3" label={{ position: 'right', value: 'Limit UE (35 dni)', fill: '#ef4444', fontSize: 10 }} />
-                    )}
+
 
                     {sortedCities.map((city, index) => (
                       <Line
@@ -526,9 +517,6 @@ export function TrendsPage() {
                         <SortableHeader column="current" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                           {changeTableData.years.current}<br /><span className="normal-case font-normal">(dni)</span>
                         </SortableHeader>
-                        <SortableHeader column="yoy" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
-                          vs {changeTableData.years.yoy}<br /><span className="normal-case font-normal">(YoY)</span>
-                        </SortableHeader>
                         {changeTableData.years.y3 > 0 && (
                           <SortableHeader column="y3" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                             vs {changeTableData.years.y3}<br /><span className="normal-case font-normal">(3 lata)</span>
@@ -555,9 +543,6 @@ export function TrendsPage() {
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
                             {row.currentValue !== undefined ? row.currentValue : '—'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                            <ChangeCell value={row.yoyChange} />
                           </td>
                           {changeTableData.years?.y3 && changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
@@ -586,9 +571,6 @@ export function TrendsPage() {
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-blue-900 font-semibold">
                             {avgRow.avgCurrent}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                            <ChangeCell value={avgRow.avgYoy} />
-                          </td>
                           {changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
                               <ChangeCell value={avgRow.avg3y} />
@@ -612,6 +594,90 @@ export function TrendsPage() {
                 </div>
               </div>
             )}
+            {/* Coverage Table Section */}
+            {coverageData && !coverageLoading && (
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <div className="mb-6">
+                  <div className="flex items-center gap-3">
+                    <TableIcon className="w-5 h-5 text-gray-600" />
+                    <h3 className="text-lg font-semibold text-gray-900">Kompletność danych pomiarowych</h3>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Liczba dni z danymi dla {pollutant} w latach 2015-2025.
+                    <span className="ml-2 inline-flex items-center gap-1">
+                      <span className="inline-block w-3 h-3 rounded bg-green-100"></span> &gt;90%
+                      <span className="inline-block w-3 h-3 rounded bg-yellow-100 ml-2"></span> 50-90%
+                      <span className="inline-block w-3 h-3 rounded bg-red-100 ml-2"></span> &lt;50%
+                    </span>
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50">
+                          Miasto
+                        </th>
+                        {coverageData.years
+                          .filter(y => y >= 2015 && y <= 2025)
+                          .sort((a, b) => b - a)
+                          .map(year => (
+                            <th key={year} scope="col" className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              {year}
+                            </th>
+                          ))}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {coverageData.cities.map((city, idx) => (
+                        <tr key={city.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0" style={{ backgroundColor: idx % 2 === 0 ? 'white' : '#f9fafb' }}>
+                            {city.name}
+                          </td>
+                          {coverageData.years
+                            .filter(y => y >= 2015 && y <= 2025)
+                            .sort((a, b) => b - a)
+                            .map(year => {
+                              const coverage = city.coverage[year];
+                              if (!coverage) {
+                                return (
+                                  <td key={year} className="px-3 py-2 text-center text-xs text-gray-300">
+                                    —
+                                  </td>
+                                );
+                              }
+                              const { days, pct } = coverage;
+                              let bgColor = 'bg-gray-100 text-gray-400';
+                              if (pct >= 90) {
+                                bgColor = 'bg-green-100 text-green-800';
+                              } else if (pct >= 50) {
+                                bgColor = 'bg-yellow-100 text-yellow-800';
+                              } else if (pct > 0) {
+                                bgColor = 'bg-red-100 text-red-800';
+                              }
+                              return (
+                                <td key={year} className={`px-3 py-2 text-center text-xs ${bgColor}`}>
+                                  <div className="font-semibold">{days}</div>
+                                  <div className="text-[10px] opacity-75">{pct}%</div>
+                                </td>
+                              );
+                            })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {coverageLoading && (
+              <div className="h-32 flex flex-col items-center justify-center bg-white rounded-2xl border border-gray-200">
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" />
+                <p className="text-sm text-gray-500">Ładowanie danych kompletności...</p>
+              </div>
+            )}
           </>
         )}
 
@@ -619,6 +685,7 @@ export function TrendsPage() {
         <div className="text-xs text-gray-400 text-center">
           Dane historyczne są agregowane i cache'owane. Rok bieżący jest przeliczany raz na dobę.
         </div>
+
 
       </main>
     </div>

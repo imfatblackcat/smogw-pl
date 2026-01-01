@@ -736,3 +736,78 @@ class CacheManager:
         
         return results
 
+    async def get_city_coverage_by_pollutant(
+        self,
+        pollutant_code: str,
+        min_hourly_per_day: int = 18,
+        min_year: int = 2015,
+    ) -> List[Dict[str, Any]]:
+        """Get data coverage per city/year for a specific pollutant.
+        
+        Groups stations by city and calculates coverage based on the best-performing
+        station for each day (to avoid penalizing cities with multiple stations
+        where some have gaps).
+        
+        Args:
+            pollutant_code: The pollutant to analyze (e.g., 'PM10', 'PM2.5')
+            min_hourly_per_day: Minimum hourly values for a day to count (default 18/24)
+            min_year: Earliest year to include (default 2015)
+            
+        Returns:
+            List of dicts with city, year, days_with_data, coverage_pct
+        """
+        query = """
+        WITH city_daily_best AS (
+            -- For each city/day, take the max hourly count among all stations
+            SELECT 
+                s.city_name,
+                CAST(strftime('%Y', cnt.day) AS INTEGER) AS year,
+                cnt.day,
+                MAX(cnt.hourly_count) AS best_hourly_count
+            FROM (
+                SELECT 
+                    station_id,
+                    date(date) AS day,
+                    COUNT(*) AS hourly_count
+                FROM measurements
+                WHERE pollutant_code = ?
+                  AND value IS NOT NULL
+                GROUP BY station_id, date(date)
+            ) cnt
+            JOIN stations s ON s.id = cnt.station_id
+            WHERE s.city_name IS NOT NULL 
+              AND s.city_name != ''
+              AND CAST(strftime('%Y', cnt.day) AS INTEGER) >= ?
+            GROUP BY s.city_name, cnt.day
+        )
+        SELECT 
+            city_name,
+            year,
+            SUM(CASE WHEN best_hourly_count >= ? THEN 1 ELSE 0 END) AS days_with_data,
+            COUNT(*) AS total_days_recorded
+        FROM city_daily_best
+        GROUP BY city_name, year
+        ORDER BY city_name, year
+        """
+
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._configure_connection(db)
+            cursor = await db.execute(query, (pollutant_code, min_year, min_hourly_per_day))
+            rows = await cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            city_name, year, days_with_data, total_days = row
+            # Calculate percentage against 365 (or 366 for leap years)
+            days_in_year = 366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365
+            coverage_pct = round(100.0 * days_with_data / days_in_year, 1)
+            results.append({
+                "city_name": city_name,
+                "year": year,
+                "days_with_data": days_with_data,
+                "coverage_pct": coverage_pct,
+            })
+        
+        return results
+

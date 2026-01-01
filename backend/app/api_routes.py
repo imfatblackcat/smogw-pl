@@ -159,6 +159,60 @@ async def get_ranking_years(
     return {"pollutant": pollutant, "years": years}
 
 
+@router.get("/data-coverage")
+async def get_data_coverage(
+    pollutant: str = Query(..., description="Pollutant code (PM10 or PM2.5)"),
+    min_year: int = Query(2015, ge=2000, le=2100, description="Minimum year to include"),
+):
+    """Get data coverage (days with measurements) per city/year for a pollutant.
+    
+    Returns aggregated coverage for plotting in a table format.
+    """
+    if pollutant not in RANKING_POLLUTANTS:
+        raise HTTPException(status_code=400, detail=f"Invalid pollutant: {pollutant}")
+
+    raw_data = await cache.get_city_coverage_by_pollutant(
+        pollutant_code=pollutant,
+        min_year=min_year,
+    )
+    
+    # Get list of configured cities to filter
+    configured_cities = set(settings.enabled_cities)
+    
+    # Group by city
+    cities_map: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    all_years: set = set()
+    
+    for row in raw_data:
+        city = row["city_name"]
+        if city not in configured_cities:
+            continue
+            
+        year = row["year"]
+        all_years.add(year)
+        
+        if city not in cities_map:
+            cities_map[city] = {}
+        
+        cities_map[city][year] = {
+            "days": row["days_with_data"],
+            "pct": row["coverage_pct"],
+        }
+    
+    # Build response
+    cities_list = []
+    for city_name in sorted(cities_map.keys()):
+        cities_list.append({
+            "name": city_name,
+            "coverage": cities_map[city_name],
+        })
+    
+    return {
+        "pollutant": pollutant,
+        "years": sorted(all_years),
+        "cities": cities_list,
+    }
+
 @router.get("/ranking/trends")
 async def get_ranking_trends(
     pollutant: str = Query(..., description="Pollutant code (PM10 or PM2.5)"),

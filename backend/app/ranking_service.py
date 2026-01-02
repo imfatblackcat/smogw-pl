@@ -281,14 +281,28 @@ class RankingService:
         # But we can't know if it's "fully" cached without knowing all cities.
         # Strategy:
         # - Past years ( < current_year): If present in cache, assume done.
-        # - Current year: Always recompute.
+        # - Current year: Recompute only if cache is stale (> 1 hour old).
         # - Missing years: Compute.
+        
+        CURRENT_YEAR_CACHE_TTL_SECONDS = 3600  # 1 hour
         
         cached_years = set(r["year"] for r in cached_stats)
         
         years_to_compute = []
         for y in years_to_cover:
             if y == current_year:
+                # Check if current year cache is fresh enough
+                cached_entry = next((r for r in cached_stats if r["year"] == y), None)
+                if cached_entry:
+                    computed_at_str = cached_entry.get("computed_at", "")
+                    try:
+                        cache_time = datetime.fromisoformat(computed_at_str)
+                        age_seconds = (datetime.utcnow() - cache_time).total_seconds()
+                        if age_seconds < CURRENT_YEAR_CACHE_TTL_SECONDS:
+                            # Cache is fresh, skip recomputation
+                            continue
+                    except (ValueError, TypeError):
+                        pass  # If parsing fails, recompute
                 years_to_compute.append(y)
             elif y not in cached_years:
                 years_to_compute.append(y)

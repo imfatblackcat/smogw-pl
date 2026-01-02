@@ -32,5 +32,5 @@ description: Deployment workflow - jak wdrażać zmiany w aplikacji smogw.pl
 ## Produkcja = Railway
 
 - Produkcja to serwer Railway
-- URL: https://smogw.pl lub https://smogw-pl-production.up.railway.app
+- URL: https://app.smogw.pl lub https://smogw-pl-production.up.railway.app
 - Redeploy ręczny: `railway redeploy --yes`

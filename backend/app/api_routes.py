@@ -1,6 +1,7 @@
 """API routes for Air Quality application."""
 import asyncio
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from .data_fetcher import GiosDataFetcher
@@ -43,6 +44,9 @@ async def startup_event():
 
     # Precompute trends data for instant TrendsPage loading
     asyncio.create_task(_precompute_trends())
+    
+    # Start hourly trends cache refresh loop
+    asyncio.create_task(_trends_refresh_loop())
 
     # Start background refresh loops (hourly delta + weekly sweep)
     refresh_coordinator.start()
@@ -77,6 +81,21 @@ async def _precompute_trends():
     
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"[precompute] Finished {computed} trend combinations in {elapsed:.1f}s")
+
+
+async def _trends_refresh_loop():
+    """Background loop to refresh trends cache every hour.
+    
+    This ensures the cache is always fresh and no user ever waits for computation.
+    """
+    REFRESH_INTERVAL_SECONDS = 3600  # 1 hour
+    
+    while True:
+        await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
+        try:
+            await _precompute_trends()
+        except Exception as e:
+            print(f"[trends_refresh] Error in hourly refresh: {e}")
 
 
 @router.on_event("shutdown")
@@ -207,11 +226,15 @@ async def get_data_coverage(
             "coverage": cities_map[city_name],
         })
     
-    return {
-        "pollutant": pollutant,
-        "years": sorted(all_years),
-        "cities": cities_list,
-    }
+    # Return with cache headers - browser caches for 5 minutes
+    return JSONResponse(
+        content={
+            "pollutant": pollutant,
+            "years": sorted(all_years),
+            "cities": cities_list,
+        },
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"}
+    )
 
 @router.get("/ranking/trends")
 async def get_ranking_trends(
@@ -234,7 +257,11 @@ async def get_ranking_trends(
             method=method,  # type: ignore[arg-type]
             standard=standard,  # type: ignore[arg-type]
         )
-        return result
+        # Return with cache headers - browser caches for 5 minutes
+        return JSONResponse(
+            content=result.model_dump() if hasattr(result, 'model_dump') else result,
+            headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"}
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

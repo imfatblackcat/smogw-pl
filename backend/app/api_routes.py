@@ -1,6 +1,8 @@
 """API routes for Air Quality application."""
 import asyncio
+import aiosqlite
 from fastapi import APIRouter, HTTPException, Query
+
 from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -704,4 +706,107 @@ async def get_completeness_report(
         "total_stations": sum(len(c["stations"]) for c in cities_list),
         "cities": cities_list,
     }
+
+
+@router.post("/admin/fill-gaps")
+async def trigger_fill_gaps(
+    sensor_ids: str = Query(..., description="Comma-separated sensor IDs (e.g., '965,995')"),
+    years: str = Query(..., description="Comma-separated years (e.g., '2020,2021,2022,2023')"),
+    min_coverage: float = Query(50.0, description="Minimum coverage percentage threshold"),
+):
+    """Fill data gaps for specific sensors and years.
+    
+    This detects months with less than min_coverage% data and fetches missing data from GIOŚ API.
+    Runs in the background; check logs for progress.
+    """
+    try:
+        sensor_id_list = [int(x.strip()) for x in sensor_ids.split(',')]
+        year_list = [int(x.strip()) for x in years.split(',')]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid sensor_ids or years format: {e}")
+    
+    # Run in background
+    asyncio.create_task(_fill_gaps_task(sensor_id_list, year_list, min_coverage))
+    
+    return {
+        "status": "started",
+        "message": "Gap filling started in background. Check server logs for progress.",
+        "sensor_ids": sensor_id_list,
+        "years": year_list,
+        "min_coverage": min_coverage,
+    }
+
+
+async def _fill_gaps_task(sensor_ids: List[int], years: List[int], min_coverage: float):
+    """Background task to fill data gaps."""
+    import calendar
+    
+    print(f"[fill-gaps] Starting gap fill for sensors {sensor_ids}, years {years}")
+    start_time = datetime.now()
+    total_fetched = 0
+    
+    for sensor_id in sensor_ids:
+        # Get sensor info
+        async with aiosqlite.connect(cache.db_path) as db:
+            cursor = await db.execute('''
+                SELECT ss.station_id, ss.pollutant_code, s.name, s.city_name
+                FROM sensors ss
+                JOIN stations s ON s.id = ss.station_id
+                WHERE ss.id = ?
+            ''', (sensor_id,))
+            row = await cursor.fetchone()
+        
+        if not row:
+            print(f"[fill-gaps] Sensor {sensor_id} not found")
+            continue
+        
+        station_id, pollutant_code, station_name, city_name = row
+        print(f"[fill-gaps] Processing sensor {sensor_id}: {city_name} - {station_name} ({pollutant_code})")
+        
+        for year in years:
+            # Get monthly counts
+            async with aiosqlite.connect(cache.db_path) as db:
+                cursor = await db.execute('''
+                    SELECT strftime('%m', date) as month, COUNT(*) as cnt
+                    FROM measurements 
+                    WHERE sensor_id = ?
+                    AND date >= ? AND date < ?
+                    GROUP BY month
+                ''', (sensor_id, f'{year}-01-01', f'{year+1}-01-01'))
+                monthly_counts = {int(r[0]): r[1] for r in await cursor.fetchall()}
+            
+            months_to_fetch = []
+            for month in range(1, 13):
+                days_in_month = calendar.monthrange(year, month)[1]
+                expected = days_in_month * 24
+                actual = monthly_counts.get(month, 0)
+                coverage = (actual / expected) * 100 if expected > 0 else 0
+                
+                if coverage < min_coverage:
+                    months_to_fetch.append((month, actual, expected, coverage))
+            
+            if not months_to_fetch:
+                print(f"[fill-gaps]   {year}: All months OK")
+                continue
+            
+            print(f"[fill-gaps]   {year}: {len(months_to_fetch)} months below {min_coverage}%")
+            
+            for month, actual, expected, coverage in months_to_fetch:
+                days_in_month = calendar.monthrange(year, month)[1]
+                start_date = datetime(year, month, 1, 0, 0)
+                end_date = datetime(year, month, days_in_month, 23, 59)
+                
+                try:
+                    measurements = await fetcher.fetch_sensor_data(sensor_id, start_date, end_date)
+                    if measurements:
+                        await cache.cache_measurements(sensor_id, station_id, pollutant_code, measurements)
+                        print(f"[fill-gaps]     {year}-{month:02d}: {len(measurements)} points")
+                        total_fetched += len(measurements)
+                    else:
+                        print(f"[fill-gaps]     {year}-{month:02d}: No data from API")
+                except Exception as e:
+                    print(f"[fill-gaps]     {year}-{month:02d}: Error - {e}")
+    
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"[fill-gaps] Completed in {elapsed:.1f}s, fetched {total_fetched} points total")
 

@@ -38,21 +38,30 @@ function calcChange(current: number | undefined, previous: number | undefined): 
 }
 
 // Change cell component
-function ChangeCell({ value }: { value: number | null }) {
+function ChangeCell({ value, previousValue }: { value: number | null; previousValue?: number }) {
   if (value === null) {
-    return <span className="text-gray-400">—</span>;
+    return <span className="text-gray-300">—</span>;
   }
 
   const isImprovement = value < 0;
   const isWorse = value > 0;
+
+  let colorClass = 'bg-gray-100 text-gray-500';
+  if (isImprovement) colorClass = 'bg-green-100 text-green-800';
+  else if (isWorse) colorClass = 'bg-red-100 text-red-800';
+
   const Icon = isImprovement ? TrendingDown : isWorse ? TrendingUp : Minus;
 
   return (
-    <span className={`inline-flex items-center gap-1 font-medium ${isImprovement ? 'text-green-600' : isWorse ? 'text-red-600' : 'text-gray-500'
-      }`}>
-      <Icon className="w-3 h-3" />
-      {value > 0 ? '+' : ''}{value}%
-    </span>
+    <div className={`inline-flex flex-col items-center justify-center py-1.5 px-3 rounded-lg w-full ${colorClass}`}>
+      <div className="font-semibold text-sm">
+        {previousValue !== undefined ? previousValue : '—'}
+      </div>
+      <div className="flex items-center gap-1 text-[10px] opacity-75 font-medium">
+        <Icon className="w-3 h-3" />
+        {value > 0 ? '+' : ''}{value}%
+      </div>
+    </div>
   );
 }
 
@@ -93,6 +102,10 @@ interface CityChangeRow {
   city: string;
   currentYear: number;
   currentValue: number | undefined;
+  value1y: number | undefined;
+  value3y: number | undefined;
+  value5y: number | undefined;
+  value10y: number | undefined;
   change1y: number | null;
   change3y: number | null;
   change5y: number | null;
@@ -249,6 +262,10 @@ export function TrendsPage() {
         city,
         currentYear: referenceYear,
         currentValue,
+        value1y,
+        value3y,
+        value5y,
+        value10y,
         change1y,
         change3y,
         change5y,
@@ -286,15 +303,19 @@ export function TrendsPage() {
 
     const avg1y = validRows.filter(r => r.change1y !== null);
     const avg1yVal = avg1y.length > 0 ? Math.round(avg1y.reduce((sum, r) => sum + r.change1y!, 0) / avg1y.length) : null;
+    const avgValue1y = avg1y.length > 0 ? Math.round(avg1y.reduce((sum, r) => sum + (r.value1y || 0), 0) / avg1y.length) : undefined;
 
     const avg3y = validRows.filter(r => r.change3y !== null);
     const avg3yVal = avg3y.length > 0 ? Math.round(avg3y.reduce((sum, r) => sum + r.change3y!, 0) / avg3y.length) : null;
+    const avgValue3y = avg3y.length > 0 ? Math.round(avg3y.reduce((sum, r) => sum + (r.value3y || 0), 0) / avg3y.length) : undefined;
 
     const avg5y = validRows.filter(r => r.change5y !== null);
     const avg5yVal = avg5y.length > 0 ? Math.round(avg5y.reduce((sum, r) => sum + r.change5y!, 0) / avg5y.length) : null;
+    const avgValue5y = avg5y.length > 0 ? Math.round(avg5y.reduce((sum, r) => sum + (r.value5y || 0), 0) / avg5y.length) : undefined;
 
     const avg10y = validRows.filter(r => r.change10y !== null);
     const avg10yVal = avg10y.length > 0 ? Math.round(avg10y.reduce((sum, r) => sum + r.change10y!, 0) / avg10y.length) : null;
+    const avgValue10y = avg10y.length > 0 ? Math.round(avg10y.reduce((sum, r) => sum + (r.value10y || 0), 0) / avg10y.length) : undefined;
 
     const avgOldest = validRows.filter(r => r.oldestChange !== null);
     const avgOldestVal = avgOldest.length > 0 ? Math.round(avgOldest.reduce((sum, r) => sum + r.oldestChange!, 0) / avgOldest.length) : null;
@@ -302,9 +323,13 @@ export function TrendsPage() {
     return {
       avgCurrent,
       avg1y: avg1yVal,
+      avgValue1y,
       avg3y: avg3yVal,
+      avgValue3y,
       avg5y: avg5yVal,
+      avgValue5y,
       avg10y: avg10yVal,
+      avgValue10y,
       avgOldest: avgOldestVal,
     };
   }, [changeTableData]);
@@ -594,22 +619,22 @@ export function TrendsPage() {
                           </td>
                           {changeTableData.years?.y1 && changeTableData.years.y1 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={row.change1y} />
+                              <ChangeCell value={row.change1y} previousValue={row.value1y} />
                             </td>
                           )}
                           {changeTableData.years?.y3 && changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={row.change3y} />
+                              <ChangeCell value={row.change3y} previousValue={row.value3y} />
                             </td>
                           )}
                           {changeTableData.years?.y5 && changeTableData.years.y5 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={row.change5y} />
+                              <ChangeCell value={row.change5y} previousValue={row.value5y} />
                             </td>
                           )}
                           {changeTableData.years?.y10 && changeTableData.years.y10 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={row.change10y} />
+                              <ChangeCell value={row.change10y} previousValue={row.value10y} />
                             </td>
                           )}
 
@@ -626,22 +651,22 @@ export function TrendsPage() {
                           </td>
                           {changeTableData.years.y1 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg1y} />
+                              <ChangeCell value={avgRow.avg1y} previousValue={avgRow.avgValue1y} />
                             </td>
                           )}
                           {changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg3y} />
+                              <ChangeCell value={avgRow.avg3y} previousValue={avgRow.avgValue3y} />
                             </td>
                           )}
                           {changeTableData.years.y5 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg5y} />
+                              <ChangeCell value={avgRow.avg5y} previousValue={avgRow.avgValue5y} />
                             </td>
                           )}
                           {changeTableData.years.y10 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg10y} />
+                              <ChangeCell value={avgRow.avg10y} previousValue={avgRow.avgValue10y} />
                             </td>
                           )}
 

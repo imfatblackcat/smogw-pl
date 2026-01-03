@@ -2,6 +2,7 @@ import { Wind, AlertCircle, Loader2 } from 'lucide-react';
 import { FilterBar } from './FilterBar';
 import { PollutantChart } from './PollutantChart';
 import { useAirQualityData } from './hooks/useAirQualityData';
+import { SEOHead } from '../common/SEOHead';
 
 export function AirQualityDashboard() {
   const {
@@ -41,6 +42,12 @@ export function AirQualityDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <SEOHead
+        title="Eksplorator Danych Historycznych Smogu - app.smogw.pl"
+        description="Przeglądaj szczegółowe wykresy i dane historyczne zanieczyszczenia powietrza (PM10, PM2.5, NO2, SO2) dla dowolnej stacji GIOŚ w Polsce."
+        canonicalPath="/explorer"
+        keywords={['dane historyczne smog', 'wykresy smog', 'archiwum GIOŚ', 'analiza powietrza', 'PM10 wykres']}
+      />
       {/* Header */}
       <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

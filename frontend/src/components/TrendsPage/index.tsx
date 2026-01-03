@@ -11,6 +11,8 @@ import {
   YAxis,
 } from 'recharts';
 import { fetchTrends, fetchDataCoverage, type RankingMethod, type TrendsResponse, type DataCoverageResponse } from '@/services/api';
+import { SEOHead } from '../common/SEOHead';
+import { Helmet } from 'react-helmet-async';
 
 const POLLUTANTS = [
   { code: 'PM10', label: 'PM10' },
@@ -385,6 +387,29 @@ export function TrendsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <SEOHead
+        title="Trendy Jakości Powietrza w Polsce - app.smogw.pl"
+        description="Sprawdź wieloletnie trendy smogu (PM10, PM2.5) w największych miastach Polski: Warszawa, Kraków, Wrocław, Katowice i inne. Analiza danych GIOŚ od 2010 roku."
+        keywords={['smog', 'jakość powietrza', 'PM10', 'PM2.5', 'Warszawa', 'Kraków', 'Wrocław', 'Poznań', 'Gdańsk', 'Katowice', 'Łódź', 'Lublin', 'Bydgoszcz', 'Szczecin']}
+      />
+      <Helmet>
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "SmogW - Trendy Jakości Powietrza",
+            "applicationCategory": "HealthApplication",
+            "operatingSystem": "Web",
+            "offer": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "PLN"
+            },
+            "description": "Aplikacja do analizy wieloletnich trendów jakości powietrza i smogu w największych miastach Polski na podstawie danych GIOŚ."
+          })}
+        </script>
+      </Helmet>
+
       {/* Hero Section */}
       <header className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
@@ -770,8 +795,23 @@ export function TrendsPage() {
         </div>
 
 
+
+        {/* Local SEO / City List */}
+        <div className="mt-12 py-8 border-t border-gray-200">
+          <div className="text-center max-w-4xl mx-auto">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              Monitorowane miasta w Polsce
+            </h3>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Aplikacja udostępnia analizy jakości powietrza i statystyki smogu dla największych ośrodków miejskich, w tym:
+              Warszawa, Kraków, Łódź, Wrocław, Poznań, Gdańsk, Szczecin, Bydgoszcz, Lublin, Białystok,
+              Katowice (Górnośląski Okręg Przemysłowy), Gdynia, Częstochowa, Radom, Toruń, Sosnowiec, Rzeszów, Kielce, Gliwice, Zabrze, Olsztyn.
+              Korzystamy z oficjalnych stacji pomiarowych Głównego Inspektoratu Ochrony Środowiska, aby zapewnić rzetelną wiedzę o trendach zanieczyszczenia (PM10, PM2.5) na przestrzeni lat.
+            </p>
+          </div>
+        </div>
+
       </main>
     </div>
   );
 }
-

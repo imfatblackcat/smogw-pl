@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon, ChevronUp, ChevronDown } from 'lucide-react';
+import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon, ChevronUp, ChevronDown, Wind } from 'lucide-react';
 import {
   CartesianGrid,
   Legend,
@@ -346,18 +346,47 @@ export function TrendsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white">
-              <LineChartIcon className="w-8 h-8" />
+      {/* Hero Section */}
+      <header className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/10 rounded-xl backdrop-blur-sm">
+                <LineChartIcon className="w-10 h-10" />
+              </div>
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                  Trendy Wieloletnie
+                </h1>
+                <p className="text-blue-100 mt-2 text-lg max-w-xl">
+                  Sprawdź, jak zmienia się jakość powietrza w największych polskich miastach na przestrzeni lat
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Trendy Wieloletnie</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Liczba dni z przekroczeniem norm jakości powietrza (15 lat)
-              </p>
+
+            {/* Call to action */}
+            <a
+              href="/explorer"
+              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm text-white px-5 py-3 rounded-xl font-medium transition-all hover:scale-105 border border-white/20"
+            >
+              <Wind className="w-5 h-5" />
+              Przejdź do Eksploratora Danych
+            </a>
+          </div>
+
+          {/* Brief description */}
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="font-semibold text-white mb-1">📊 15 lat danych</div>
+              <div className="text-blue-100">Analiza trendów od 2010 roku do dziś dla miast wojewódzkich w Polsce</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="font-semibold text-white mb-1">🏥 Normy WHO</div>
+              <div className="text-blue-100">Porównanie z najnowszymi wytycznymi Światowej Organizacji Zdrowia</div>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/10">
+              <div className="font-semibold text-white mb-1">📈 Dane GIOŚ</div>
+              <div className="text-blue-100">Oficjalne pomiary z sieci monitoringu Głównego Inspektoratu Ochrony Środowiska</div>
             </div>
           </div>
         </div>

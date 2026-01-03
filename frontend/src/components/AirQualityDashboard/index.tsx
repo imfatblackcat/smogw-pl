@@ -10,7 +10,7 @@ export function AirQualityDashboard() {
     pollutants,
     dataByPollutant,
     stationIdToCity,
-    
+
     // Filter state
     selectedStationIds,
     selectedPollutants,
@@ -18,12 +18,12 @@ export function AirQualityDashboard() {
     startDate,
     endDate,
     aggregation,
-    
+
     // Loading state
     loading,
     initialLoading,
     error,
-    
+
     // Actions
     setSelectedStationIds,
     setSelectedPollutants,
@@ -50,10 +50,10 @@ export function AirQualityDashboard() {
             </div>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold">
-                smogw.pl
+                Eksplorator Danych Historycznych
               </h1>
               <p className="text-blue-100 mt-1">
-                Wizualizacja jakości powietrza - dane historyczne z GIOŚ
+                app.smogw.pl - Wizualizacja danych o jakości powietrza z GIOŚ
               </p>
             </div>
           </div>
@@ -122,7 +122,7 @@ export function AirQualityDashboard() {
                 {selectedPollutantObjects.map((pollutant) => {
                   const data = dataByPollutant.get(pollutant.code) || [];
                   if (data.length === 0) return null;
-                  
+
                   return (
                     <PollutantChart
                       key={pollutant.code}
@@ -134,7 +134,7 @@ export function AirQualityDashboard() {
                     />
                   );
                 })}
-                
+
                 {/* Stats */}
                 <div className="text-center text-sm text-gray-500">
                   Łączna liczba punktów danych:{' '}

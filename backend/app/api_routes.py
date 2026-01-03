@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 from .data_fetcher import GiosDataFetcher
 from .cache_manager import CacheManager
@@ -261,7 +262,7 @@ async def get_ranking_trends(
         )
         # Return with cache headers - browser caches for 5 minutes
         return JSONResponse(
-            content=result.model_dump() if hasattr(result, 'model_dump') else result,
+            content=asdict(result),
             headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"}
         )
     except ValueError as e:

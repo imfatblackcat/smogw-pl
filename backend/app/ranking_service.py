@@ -250,31 +250,37 @@ class RankingService:
                 raise ValueError(f"No EU limit for {pollutant}")
             threshold_value = EU_2030_DAILY_LIMITS[pollutant].threshold_value
 
-        # 1. Determine available years in raw data
-        available_years = await self.cache.get_available_years_for_pollutant(pollutant)
-        if not available_years:
-            return RankingTrendResult(
-                pollutant=pollutant,
-                method=method,
-                standard=standard,
-                threshold_value=threshold_value,
-                years=[],
-                cities=[],
-                points=[],
-            )
-
-        min_year, max_year = min(available_years), max(available_years)
-        # We want to cover range [min_year, max_year]
-        years_to_cover = list(range(min_year, max_year + 1))
-        
-        current_year = datetime.now().year
-
-        # 2. Fetch what we already have in cache
+        # 1. First try to get years from cache (fast)
         cached_stats = await self.cache.get_annual_stats(
             pollutant_code=pollutant,
             ranking_method=method,
             standard_type=standard,
         )
+        
+        current_year = datetime.now().year
+        
+        if cached_stats:
+            # Use years from cache - much faster than querying measurements
+            cached_years = set(r["year"] for r in cached_stats)
+            min_year = min(cached_years)
+            max_year = max(max(cached_years), current_year)
+            years_to_cover = list(range(min_year, max_year + 1))
+        else:
+            # Cache is empty - need to query measurements (slow, but only happens once)
+            available_years = await self.cache.get_available_years_for_pollutant(pollutant)
+            if not available_years:
+                return RankingTrendResult(
+                    pollutant=pollutant,
+                    method=method,
+                    standard=standard,
+                    threshold_value=threshold_value,
+                    years=[],
+                    cities=[],
+                    points=[],
+                )
+            min_year, max_year = min(available_years), max(available_years)
+            years_to_cover = list(range(min_year, max_year + 1))
+            cached_years = set()
 
         # Build a map of what's cached: year -> set(cities)
         # Actually, simpler: map (year) -> is_fully_cached? 
@@ -286,7 +292,7 @@ class RankingService:
         
         CURRENT_YEAR_CACHE_TTL_SECONDS = 3600  # 1 hour
         
-        cached_years = set(r["year"] for r in cached_stats)
+        # cached_years already computed above from cached_stats
         
         years_to_compute = []
         for y in years_to_cover:

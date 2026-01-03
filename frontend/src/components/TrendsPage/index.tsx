@@ -87,7 +87,7 @@ function SortableHeader({
   return (
     <th
       scope="col"
-      className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+      className="px-4 py-3 text-center text-xs font-medium text-gray-500 tracking-wider cursor-pointer hover:bg-gray-100 select-none"
       onClick={() => onSort(column)}
     >
       <div className="inline-flex items-center gap-1">
@@ -580,7 +580,7 @@ export function TrendsPage() {
                     <thead className="bg-gray-50">
                       <tr>
                         <SortableHeader column="city" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
-                          <span className="text-left">Miasto</span>
+                          <span className="text-left uppercase">Miasto</span>
                         </SortableHeader>
                         <SortableHeader column="current" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                           {changeTableData.years.current}<br /><span className="normal-case font-normal">(dni)</span>

@@ -57,7 +57,7 @@ function ChangeCell({ value }: { value: number | null }) {
 }
 
 // Sortable column types
-type SortColumn = 'city' | 'current' | 'y3' | 'y5' | 'y10';
+type SortColumn = 'city' | 'current' | 'y1' | 'y3' | 'y5' | 'y10';
 type SortDirection = 'asc' | 'desc';
 
 // Sortable header component
@@ -93,6 +93,7 @@ interface CityChangeRow {
   city: string;
   currentYear: number;
   currentValue: number | undefined;
+  change1y: number | null;
   change3y: number | null;
   change5y: number | null;
   change10y: number | null;
@@ -196,7 +197,7 @@ export function TrendsPage() {
   }, [data]);
 
   // Calculate change table data
-  const changeTableData = useMemo((): { rows: CityChangeRow[], years: { current: number, y3: number, y5: number, y10: number, oldest: number } | null } => {
+  const changeTableData = useMemo((): { rows: CityChangeRow[], years: { current: number, y1: number, y3: number, y5: number, y10: number, oldest: number } | null } => {
     if (!data || data.years.length < 2) return { rows: [], years: null };
 
     // Get the current calendar year to determine the "last full year"
@@ -207,6 +208,7 @@ export function TrendsPage() {
     const referenceYear = sortedYears.find(y => y < calendarYear) || sortedYears[0];
 
     // Calculate comparison years based on the reference year
+    const year1 = sortedYears.find(y => y <= referenceYear - 1);
     const year3 = sortedYears.find(y => y <= referenceYear - 3);
     const year5 = sortedYears.find(y => y <= referenceYear - 5);
     const year10 = sortedYears.find(y => y <= referenceYear - 10);
@@ -228,11 +230,13 @@ export function TrendsPage() {
 
     const rows: CityChangeRow[] = data.cities.map(city => {
       const currentValue = yearData[referenceYear]?.[city];
+      const value1y = year1 ? yearData[year1]?.[city] : undefined;
       const value3y = year3 ? yearData[year3]?.[city] : undefined;
       const value5y = year5 ? yearData[year5]?.[city] : undefined;
       const value10y = year10 ? yearData[year10]?.[city] : undefined;
       const oldestValue = yearData[oldestYear]?.[city];
 
+      const change1y = calcChange(currentValue, value1y);
       const change3y = calcChange(currentValue, value3y);
       const change5y = calcChange(currentValue, value5y);
       const change10y = calcChange(currentValue, value10y);
@@ -245,6 +249,7 @@ export function TrendsPage() {
         city,
         currentYear: referenceYear,
         currentValue,
+        change1y,
         change3y,
         change5y,
         change10y,
@@ -261,6 +266,7 @@ export function TrendsPage() {
       rows,
       years: {
         current: referenceYear,
+        y1: year1 || 0,
         y3: year3 || 0,
         y5: year5 || 0,
         y10: year10 || 0,
@@ -278,6 +284,9 @@ export function TrendsPage() {
 
     const avgCurrent = Math.round(validRows.reduce((sum, r) => sum + (r.currentValue || 0), 0) / validRows.length);
 
+    const avg1y = validRows.filter(r => r.change1y !== null);
+    const avg1yVal = avg1y.length > 0 ? Math.round(avg1y.reduce((sum, r) => sum + r.change1y!, 0) / avg1y.length) : null;
+
     const avg3y = validRows.filter(r => r.change3y !== null);
     const avg3yVal = avg3y.length > 0 ? Math.round(avg3y.reduce((sum, r) => sum + r.change3y!, 0) / avg3y.length) : null;
 
@@ -292,6 +301,7 @@ export function TrendsPage() {
 
     return {
       avgCurrent,
+      avg1y: avg1yVal,
       avg3y: avg3yVal,
       avg5y: avg5yVal,
       avg10y: avg10yVal,
@@ -315,6 +325,10 @@ export function TrendsPage() {
         case 'current':
           aVal = a.currentValue ?? -9999;
           bVal = b.currentValue ?? -9999;
+          break;
+        case 'y1':
+          aVal = a.change1y ?? 9999;
+          bVal = b.change1y ?? 9999;
           break;
         case 'y3':
           aVal = a.change3y ?? 9999;
@@ -546,6 +560,11 @@ export function TrendsPage() {
                         <SortableHeader column="current" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                           {changeTableData.years.current}<br /><span className="normal-case font-normal">(dni)</span>
                         </SortableHeader>
+                        {changeTableData.years.y1 > 0 && (
+                          <SortableHeader column="y1" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
+                            vs {changeTableData.years.y1}<br /><span className="normal-case font-normal">(1 rok)</span>
+                          </SortableHeader>
+                        )}
                         {changeTableData.years.y3 > 0 && (
                           <SortableHeader column="y3" currentSort={sortColumn} direction={sortDirection} onSort={handleSort}>
                             vs {changeTableData.years.y3}<br /><span className="normal-case font-normal">(3 lata)</span>
@@ -573,6 +592,11 @@ export function TrendsPage() {
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-900 font-semibold">
                             {row.currentValue !== undefined ? row.currentValue : '—'}
                           </td>
+                          {changeTableData.years?.y1 && changeTableData.years.y1 > 0 && (
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                              <ChangeCell value={row.change1y} />
+                            </td>
+                          )}
                           {changeTableData.years?.y3 && changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
                               <ChangeCell value={row.change3y} />
@@ -600,6 +624,11 @@ export function TrendsPage() {
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-blue-900 font-semibold">
                             {avgRow.avgCurrent}
                           </td>
+                          {changeTableData.years.y1 > 0 && (
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
+                              <ChangeCell value={avgRow.avg1y} />
+                            </td>
+                          )}
                           {changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
                               <ChangeCell value={avgRow.avg3y} />

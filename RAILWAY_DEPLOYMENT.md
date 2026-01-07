@@ -1,4 +1,4 @@
-# Instrukcja Wdrożenia smogw.pl na Railway.app
+# Instrukcja Wdrożenia app.smogw.pl na Railway.app
 
 ## Przegląd
 Railway.app to platforma PaaS (Platform as a Service), która automatyzuje deployment, scaling i zarządzanie infrastrukturą. Idealna dla prostego wdrożenia bez konieczności zarządzania serwerem.
@@ -20,7 +20,7 @@ cd /Users/user/airquality
 # Inicjalizuj git (jeśli nie jest już zainicjalizowane)
 git init
 git add .
-git commit -m "Initial commit for smogw.pl"
+git commit -m "Initial commit for app.smogw.pl"
 
 # Utwórz repo na GitHub i połącz
 gh repo create smogw-pl --public --source=. --remote=origin --push
@@ -38,7 +38,7 @@ Sprawdź czy masz te pliki w głównym katalogu projektu:
 
 ```bash
 git add .
-git commit -m "Add Railway.app configuration for smogw.pl"
+git commit -m "Add Railway.app configuration for app.smogw.pl"
 git push origin main
 ```
 
@@ -85,12 +85,12 @@ W Railway dashboard → twój service → **"Variables"** dodaj:
 | `PORT` | `8000` | Port aplikacji (Railway używa $PORT) |
 | `DATABASE_PATH` | `/app/data/cache.db` | Ścieżka do SQLite (w volume) |
 | `AIRQUALITY_SQLITE_BUSY_TIMEOUT_MS` | `10000` | Timeout dla SQLite |
-| `ALLOWED_ORIGINS` | `https://smogw.pl` | CORS - zaktualizuj po dodaniu domeny |
+| `ALLOWED_ORIGINS` | `https://app.smogw.pl` | CORS - zaktualizuj po dodaniu domeny |
 | `LOG_LEVEL` | `INFO` | Poziom logowania |
 
 **Uwaga:** Po pierwszym deploy dostaniesz Railway URL (np. `smogw-production.up.railway.app`). Dodaj go do `ALLOWED_ORIGINS`:
 ```
-ALLOWED_ORIGINS=https://smogw.pl,https://smogw-production.up.railway.app
+ALLOWED_ORIGINS=https://app.smogw.pl,https://smogw-production.up.railway.app
 ```
 
 ---
@@ -176,7 +176,7 @@ TTL:   3600
 
 W Railway Variables dodaj nową domenę do `ALLOWED_ORIGINS`:
 ```
-ALLOWED_ORIGINS=https://smogw.pl,https://www.smogw.pl,https://smogw-production.up.railway.app
+ALLOWED_ORIGINS=https://app.smogw.pl,https://www.smogw.pl,https://smogw-production.up.railway.app
 ```
 
 ### 5.5 Poczekaj na propagację DNS (5-30 minut)
@@ -386,7 +386,7 @@ ALLOWED_ORIGINS=https://smogw.pl,https://<twoj-deployment>.up.railway.app
 - [ ] Dodaj custom domain w Railway
 - [ ] Skonfiguruj DNS u dostawcy domeny
 - [ ] Zaktualizuj CORS z nową domeną
-- [ ] Przetestuj https://smogw.pl
+- [ ] Przetestuj https://app.smogw.pl
 - [ ] Ustaw monitoring/alerty
 - [ ] Zaplanuj strategię backupów
 
@@ -410,4 +410,4 @@ Jeśli masz problemy:
 
 ---
 
-**Sukces!** 🎉 Twoja aplikacja smogw.pl działa na Railway.app z automatycznymi deploymentami, SSL i monitoringiem.
+**Sukces!** 🎉 Twoja aplikacja app.smogw.pl działa na Railway.app z automatycznymi deploymentami, SSL i monitoringiem.

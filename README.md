@@ -1,8 +1,8 @@
-# smogw.pl - Jakość Powietrza w Polsce
+# app.smogw.pl - Jakość Powietrza w Polsce
 
 Aplikacja webowa do wizualizacji danych o jakości powietrza w 10 największych miastach Polski za ostatnie 5 lat.
 
-**Domena produkcyjna:** https://smogw.pl
+**Domena produkcyjna:** https://app.smogw.pl
 
 ## Funkcjonalności
 

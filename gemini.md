@@ -1,4 +1,4 @@
-# Kontekst Projektu AirQuality (smogw.pl)
+# Kontekst Projektu AirQuality (app.smogw.pl)
 
 ## Technologie
 - **Backend**: Python 3.10 z frameworkiem **FastAPI**.

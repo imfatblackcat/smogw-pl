@@ -8,7 +8,7 @@ from pathlib import Path
 from .api_routes import router
 
 app = FastAPI(
-    title="smogw.pl - Air Quality Poland API",
+    title="app.smogw.pl - Air Quality Poland API",
     description="API for air quality data visualization in 10 largest Polish cities",
     version="1.0.0"
 )
@@ -48,7 +48,7 @@ if frontend_dist.exists():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "smogw.pl API"}
+    return {"status": "healthy", "service": "app.smogw.pl API"}
 
 
 # SPA fallback for client-side routes (e.g. /ranking).

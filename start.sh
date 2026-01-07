@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Uruchamianie smogw.pl..."
+echo "🚀 Uruchamianie app.smogw.pl..."
 echo ""
 
 # Start backend
@@ -23,7 +23,7 @@ echo "✅ Frontend uruchomiony (PID: $FRONTEND_PID) na http://localhost:5173"
 echo ""
 
 echo "================================"
-echo "🎉 smogw.pl gotowy!"
+echo "🎉 app.smogw.pl gotowy!"
 echo "================================"
 echo "Frontend: http://localhost:5173"
 echo "Backend API: http://localhost:8000"

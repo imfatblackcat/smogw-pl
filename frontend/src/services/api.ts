@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { City, Pollutant, DataResponse, FetchDataParams } from '@/components/AirQualityDashboard/types';
 
-// Default to same-origin (works when frontend is served by the backend under smogw.pl).
+// Default to same-origin (works when frontend is served by the backend under app.smogw.pl).
 // For separate deployments, set VITE_API_URL at build time.
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 

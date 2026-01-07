@@ -397,7 +397,7 @@ export function TrendsPage() {
           {JSON.stringify({
             "@context": "https://schema.org",
             "@type": "SoftwareApplication",
-            "name": "SmogW - Trendy Jakości Powietrza",
+            "name": "app.smogw.pl - Trendy Jakości Powietrza",
             "applicationCategory": "HealthApplication",
             "operatingSystem": "Web",
             "offer": {

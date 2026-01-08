@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
-import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon, ChevronUp, ChevronDown, Wind } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { AlertCircle, LineChart as LineChartIcon, Loader2, Info, TrendingDown, TrendingUp, Minus, Table as TableIcon, ChevronUp, ChevronDown, Wind, Download, FileSpreadsheet, FileText, Image as ImageIcon } from 'lucide-react';
 import {
   CartesianGrid,
   Legend,
@@ -13,6 +13,8 @@ import {
 import { fetchTrends, fetchDataCoverage, type RankingMethod, type TrendsResponse, type DataCoverageResponse } from '@/services/api';
 import { SEOHead } from '../common/SEOHead';
 import { Helmet } from 'react-helmet-async';
+import { useChartExport } from '@/hooks/useChartExport';
+import { format } from 'date-fns';
 
 const POLLUTANTS = [
   { code: 'PM10', label: 'PM10' },
@@ -40,7 +42,7 @@ function calcChange(current: number | undefined, previous: number | undefined): 
 }
 
 // Change cell component
-function ChangeCell({ value, previousValue }: { value: number | null; previousValue?: number }) {
+function ChangeCell({ value, previousValue, hideValue }: { value: number | null; previousValue?: number; hideValue?: boolean }) {
   if (value === null) {
     return <span className="text-gray-300">—</span>;
   }
@@ -56,10 +58,12 @@ function ChangeCell({ value, previousValue }: { value: number | null; previousVa
 
   return (
     <div className={`inline-flex flex-col items-center justify-center py-1.5 px-3 rounded-lg w-full ${colorClass}`}>
-      <div className="font-semibold text-sm">
-        {previousValue !== undefined ? previousValue : '—'}
-      </div>
-      <div className="flex items-center gap-1 text-[10px] opacity-75 font-medium">
+      {!hideValue && (
+        <div className="font-semibold text-sm">
+          {previousValue !== undefined ? previousValue : '—'}
+        </div>
+      )}
+      <div className={`flex items-center gap-1 text-[10px] opacity-75 font-medium ${hideValue ? 'text-xs py-1' : ''}`}>
         <Icon className="w-3 h-3" />
         {value > 0 ? '+' : ''}{value}%
       </div>
@@ -144,6 +148,35 @@ export function TrendsPage() {
       setSortColumn(column);
       setSortDirection(column === 'city' ? 'asc' : 'asc'); // For changes, asc = best improvement first
     }
+  };
+
+  // Export hook
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const { exportToCSV, exportToExcel, exportToJPEG, exportToPDF } = useChartExport();
+  const chartId = `trends-chart-${Math.random().toString(36).substr(2, 9)}`;
+
+  const handleExport = (type: 'csv' | 'xlsx' | 'jpeg' | 'pdf') => {
+    if (!data) return;
+
+    const fileName = `trendy-dni-smogowe-${format(new Date(), 'yyyyMMdd')}`;
+    const options = { fileName, title: 'Trendy liczby dni z przekroczeniami norm' };
+
+    switch (type) {
+      case 'csv':
+        exportToCSV(data.points, options);
+        break;
+      case 'xlsx':
+        exportToExcel(data.points, options);
+        break;
+      case 'jpeg':
+        exportToJPEG(chartId, options);
+        break;
+      case 'pdf':
+        exportToPDF(chartId, options);
+        break;
+    }
+    setShowExportMenu(false);
   };
 
   useEffect(() => {
@@ -518,21 +551,70 @@ export function TrendsPage() {
         {!loading && !error && data && (
           <>
             {/* Chart Section */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="mb-6 flex justify-between items-start">
+            <div ref={chartRef} id={chartId} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative">
+              <div className="mb-6 mr-12 sm:mr-32">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">Wykres liczby dni z przekroczeniem</h3>
                   <p className="text-sm text-gray-500">
                     Kliknij nazwę miasta w legendzie, aby ukryć/pokazać serię.
                   </p>
+
+                  {/* WHO limit info line */}
+                  {pollutant === 'PM2.5' && (
+                    <div className="mt-2 inline-flex items-center gap-2 text-xs bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full border border-amber-200">
+                      <Info className="w-3 h-3 flex-shrink-0" />
+                      <span>WHO zaleca max 3-4 dni przekroczeń rocznie (dla normy 15 µg/m³)</span>
+                    </div>
+                  )}
                 </div>
-                {/* WHO limit info line */}
-                {pollutant === 'PM2.5' && (
-                  <div className="flex items-center gap-2 text-xs bg-amber-50 text-amber-800 px-3 py-1.5 rounded-full border border-amber-200">
-                    <Info className="w-3 h-3" />
-                    WHO zaleca max 3-4 dni przekroczeń rocznie (dla normy 15 µg/m³)
-                  </div>
-                )}
+              </div>
+
+              {/* Export Button */}
+              <div className="absolute top-6 right-6">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors shadow-sm"
+                    title="Pobierz wykres"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Pobierz</span>
+                  </button>
+
+                  {showExportMenu && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-10 animate-in fade-in zoom-in-95 duration-200">
+                      <button
+                        onClick={() => handleExport('csv')}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <FileText className="w-4 h-4 text-green-600" />
+                        Dane (CSV)
+                      </button>
+                      <button
+                        onClick={() => handleExport('xlsx')}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-green-600" />
+                        Dane (Excel)
+                      </button>
+                      <div className="my-1 border-t border-gray-100" />
+                      <button
+                        onClick={() => handleExport('jpeg')}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <ImageIcon className="w-4 h-4 text-blue-600" />
+                        Obraz (JPEG)
+                      </button>
+                      <button
+                        onClick={() => handleExport('pdf')}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <FileText className="w-4 h-4 text-red-600" />
+                        Dokument (PDF)
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="h-[500px] w-full">
@@ -676,22 +758,22 @@ export function TrendsPage() {
                           </td>
                           {changeTableData.years.y1 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg1y} previousValue={avgRow.avgValue1y} />
+                              <ChangeCell value={avgRow.avg1y} previousValue={avgRow.avgValue1y} hideValue={true} />
                             </td>
                           )}
                           {changeTableData.years.y3 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg3y} previousValue={avgRow.avgValue3y} />
+                              <ChangeCell value={avgRow.avg3y} previousValue={avgRow.avgValue3y} hideValue={true} />
                             </td>
                           )}
                           {changeTableData.years.y5 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg5y} previousValue={avgRow.avgValue5y} />
+                              <ChangeCell value={avgRow.avg5y} previousValue={avgRow.avgValue5y} hideValue={true} />
                             </td>
                           )}
                           {changeTableData.years.y10 > 0 && (
                             <td className="px-4 py-3 whitespace-nowrap text-sm text-center">
-                              <ChangeCell value={avgRow.avg10y} previousValue={avgRow.avgValue10y} />
+                              <ChangeCell value={avgRow.avg10y} previousValue={avgRow.avgValue10y} hideValue={true} />
                             </td>
                           )}
 
